@@ -1,0 +1,15 @@
+[submodule "repo/Awesome-ML-SYS-Tutorial"]
+	path = repo/Awesome-ML-SYS-Tutorial
+	url = https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial.git
+[submodule "repo/FastFlowLM"]
+	path = repo/FastFlowLM
+	url = https://github.com/FastFlowLM/FastFlowLM.git
+[submodule "repo/mini-sglang"]
+	path = repo/mini-sglang
+	url = git@github.com:qqqejjjj/mini_sglang.git
+[submodule "repo/TileRT"]
+	path = repo/TileRT
+	url = https://github.com/tile-ai/TileRT
+[submodule "repo/vllm"]
+	path = repo/vllm
+	url = git@github.com:qqqejjjj/vllm.git
