@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vLLM GPU Kernel 全景：从零到英雄</title>
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},options:{skipHtmlTags:['script','noscript','style','textarea']}}</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-c.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-cpp.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js" defer></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-primary:#0f1117;--bg-card:#1a1d27;--bg-code:#12151e;--bg-highlight:#1e2433;
+  --accent-blue:#4a9eff;--accent-green:#56d364;--accent-orange:#f0883e;
+  --accent-purple:#bc8cff;--accent-red:#ff7b72;--accent-yellow:#e3b341;
+  --text-primary:#e6edf3;--text-secondary:#8b949e;--border:#30363d;
+  --font-mono:'JetBrains Mono','Courier New',monospace;
+  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+}
+[data-theme="light"]{
+  --bg-primary:#ffffff;--bg-card:#f6f8fa;--bg-code:#f0f2f5;--bg-highlight:#eaf0fb;
+  --text-primary:#24292f;--text-secondary:#57606a;--border:#d0d7de;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-primary);line-height:1.7;font-size:15px}
+a{color:var(--accent-blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--font-mono);font-size:0.875em;background:var(--bg-code);padding:2px 6px;border-radius:4px;color:var(--accent-orange)}
+pre code{background:none;padding:0;color:inherit;font-size:0.85em}
+pre[class*="language-"]{border-radius:8px;margin:1.2rem 0;font-size:0.82em;border:1px solid var(--border)}
+/* Layout */
+.layout{display:flex;min-height:100vh}
+nav{width:268px;min-width:268px;position:sticky;top:0;height:100vh;overflow-y:auto;padding:1rem 0.8rem;background:var(--bg-card);border-right:1px solid var(--border);flex-shrink:0}
+nav::-webkit-scrollbar{width:4px}nav::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.nav-title{font-size:0.78rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;padding:0.5rem 0.4rem 0.3rem;margin-top:0.8rem}
+.nav-title:first-child{margin-top:0}
+nav a{display:block;padding:4px 8px;border-radius:5px;color:var(--text-secondary);font-size:0.82rem;line-height:1.5;transition:all .15s}
+nav a:hover{color:var(--text-primary);background:var(--bg-highlight);text-decoration:none}
+nav a.active{color:var(--accent-blue);background:var(--bg-highlight);font-weight:500}
+nav a.tier1{border-left:3px solid var(--accent-blue);padding-left:5px}
+nav a.tier2{border-left:3px solid var(--accent-green);padding-left:5px}
+main{flex:1;padding:2rem 2.5rem;min-width:0}
+.article{max-width:860px;margin:0 auto}
+/* Header */
+.top-bar{display:flex;justify-content:space-between;align-items:center;padding:1rem 2.5rem;background:var(--bg-card);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.top-bar h1{font-size:1.1rem;font-weight:700;color:var(--text-primary)}
+.top-bar h1 span{color:var(--accent-blue)}
+.theme-btn{background:var(--bg-highlight);border:1px solid var(--border);color:var(--text-primary);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.85rem;transition:background .15s}
+.theme-btn:hover{background:var(--border)}
+/* Sections */
+section{margin:2.5rem 0}
+h2{font-size:1.5rem;font-weight:700;color:var(--text-primary);margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
+h3{font-size:1.15rem;font-weight:600;color:var(--text-primary);margin:1.5rem 0 .6rem}
+h4{font-size:1rem;font-weight:600;color:var(--accent-blue);margin:1.2rem 0 .5rem}
+p{margin:.7rem 0}
+/* Cards */
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:1.4rem 1.6rem;margin:1rem 0}
+.tier1-card{border-left:4px solid var(--accent-blue)}
+.tier2-card{border-left:4px solid var(--accent-green)}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:0.72rem;font-weight:600;letter-spacing:.04em;margin-left:.5rem;vertical-align:middle}
+.badge-t1{background:rgba(74,158,255,.15);color:var(--accent-blue);border:1px solid rgba(74,158,255,.3)}
+.badge-t2{background:rgba(86,211,100,.15);color:var(--accent-green);border:1px solid rgba(86,211,100,.3)}
+.badge-t3{background:rgba(139,148,158,.1);color:var(--text-secondary);border:1px solid var(--border)}
+/* Tables */
+table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.875rem}
+th{background:var(--bg-highlight);color:var(--text-secondary);font-weight:600;padding:8px 12px;text-align:left;border:1px solid var(--border)}
+td{padding:7px 12px;border:1px solid var(--border);color:var(--text-primary)}
+tr:hover td{background:var(--bg-highlight)}
+/* SVG diagrams */
+.svg-wrap{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:1rem;margin:1.2rem 0;overflow-x:auto;text-align:center}
+.svg-wrap svg{max-width:100%;height:auto}
+/* Animations */
+.anim-box{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:1.2rem;margin:1.2rem 0}
+.anim-controls{display:flex;gap:8px;align-items:center;margin-top:.8rem;flex-wrap:wrap}
+.anim-controls button{background:var(--bg-highlight);border:1px solid var(--border);color:var(--text-primary);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:.82rem;font-family:var(--font-sans);transition:background .15s}
+.anim-controls button:hover{background:var(--border)}
+.anim-counter{font-size:.78rem;color:var(--text-secondary);margin-left:.5rem}
+.anim-label{font-size:.88rem;color:var(--accent-blue);margin-top:.5rem;min-height:1.4em;font-weight:500}
+/* Details / Tier3 */
+details{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;margin:1rem 0}
+summary{padding:.9rem 1.2rem;cursor:pointer;font-weight:600;color:var(--text-secondary);list-style:none;display:flex;align-items:center;gap:.5rem}
+summary::-webkit-details-marker{display:none}
+summary::before{content:'▶';font-size:.7rem;transition:transform .2s;color:var(--text-secondary)}
+details[open] summary::before{transform:rotate(90deg)}
+details .inner{padding:.5rem 1.2rem 1.2rem}
+/* Info box */
+.info{background:rgba(74,158,255,.07);border:1px solid rgba(74,158,255,.25);border-radius:8px;padding:.9rem 1.1rem;margin:1rem 0;font-size:.88rem}
+.warn{background:rgba(240,136,62,.07);border:1px solid rgba(240,136,62,.3);border-radius:8px;padding:.9rem 1.1rem;margin:1rem 0;font-size:.88rem}
+.formula-box{background:var(--bg-highlight);border-left:3px solid var(--accent-purple);border-radius:0 8px 8px 0;padding:.9rem 1.2rem;margin:1rem 0;overflow-x:auto}
+/* Issue cards */
+.issue-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:1rem 1.2rem;margin:.8rem 0;border-left:4px solid var(--accent-red)}
+.issue-card.closed{border-left-color:var(--accent-green)}
+.issue-title{font-weight:600;color:var(--text-primary);margin-bottom:.3rem}
+.issue-meta{font-size:.78rem;color:var(--text-secondary);margin-bottom:.4rem}
+/* File path */
+.filepath{font-family:var(--font-mono);font-size:.78rem;color:var(--accent-green);background:var(--bg-code);padding:2px 8px;border-radius:4px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <h1><span>vLLM</span> GPU Kernel 全景：从零到英雄</h1>
+  <button class="theme-btn" onclick="toggleTheme()" id="theme-btn">☀ 浅色</button>
+</div>
+<div class="layout">
+<!-- NAVIGATION -->
+<nav id="sidebar">
+  <div class="nav-title">导航</div>
+  <a href="#sec-intro">0. 前言：性能瓶颈</a>
+  <div class="nav-title">Part I — Attention</div>
+  <a href="#sec-dispatch">1. 后端选择与分发</a>
+  <a href="#sec-fa" class="tier1">2. FlashAttention</a>
+  <a href="#sec-flashinfer" class="tier2">3. FlashInfer</a>
+  <a href="#sec-trtllm" class="tier2">4. TRTLLM-GEN</a>
+  <a href="#sec-mla" class="tier1">5. FlashMLA</a>
+  <a href="#sec-triton" class="tier2">6. Triton Attention</a>
+  <div class="nav-title">Part II — GEMM/MoE</div>
+  <a href="#sec-gemm-basics">7. GEMM 基础</a>
+  <a href="#sec-cutlass-w8a8" class="tier1">8. CUTLASS W8A8</a>
+  <a href="#sec-cutlass-w4a8" class="tier2">9. CUTLASS W4A8</a>
+  <a href="#sec-fp4" class="tier2">10. FP4/NVFP4</a>
+  <a href="#sec-cute" class="tier2">11. CuTeDSL</a>
+  <a href="#sec-marlin" class="tier1">12. Marlin W4A16</a>
+  <a href="#sec-moe" class="tier1">13. MoE 路由 Kernels</a>
+  <div class="nav-title">Part III — 工程集成</div>
+  <a href="#sec-selector">14. 后端决策树</a>
+  <a href="#sec-issues">15. 当前已知 Issue</a>
+</nav>
+<!-- MAIN -->
+<main>
+<div class="article">
+
+<!-- ═══ SECTION 0: INTRO ═══ -->
+<section id="sec-intro">
+<h2>0. 前言：为何 GPU Kernel 是 LLM 推理的核心瓶颈</h2>
+<p>大语言模型推理的计算图可以粗略地分成两类操作：<strong>Attention</strong>（注意力计算）和 <strong>GEMM</strong>（矩阵乘法）。这两类操作的性能特征截然不同，需要完全不同的优化策略。理解这一区别是理解 vLLM 所有 GPU Kernel 设计决策的起点。</p>
+<h3>Roofline 模型</h3>
+<p>GPU 性能受两个天花板限制：计算峰值（Peak FLOPS）和内存带宽（Memory Bandwidth，BW）。Roofline 模型用算术强度（Arithmetic Intensity，AI）来刻画一个算法究竟是哪个瓶颈：</p>
+<div class="formula-box">$$\text{Performance} = \min\!\left(\text{Peak FLOPS},\; AI \times BW\right)$$$$AI = \frac{\text{FLOPs}}{\text{Bytes读写}}$$</div>
+<div class="svg-wrap">
+<svg viewBox="0 0 600 300" width="600" height="300">
+  <rect width="600" height="300" fill="var(--bg-card)" rx="8"/>
+  <line x1="60" y1="15" x2="60" y2="255" stroke="var(--text-secondary)" stroke-width="1.5"/>
+  <line x1="60" y1="255" x2="575" y2="255" stroke="var(--text-secondary)" stroke-width="1.5"/>
+  <text x="12" y="140" fill="var(--text-secondary)" font-size="10" transform="rotate(-90,12,140)" text-anchor="middle" font-family="Inter">Performance (TFLOPS)</text>
+  <text x="315" y="292" fill="var(--text-secondary)" font-size="10" text-anchor="middle" font-family="Inter">Arithmetic Intensity (FLOPs/Byte)</text>
+  <polyline points="60,255 240,45 575,45" fill="none" stroke="var(--accent-blue)" stroke-width="2.5"/>
+  <text x="130" y="155" fill="var(--accent-blue)" font-size="10" transform="rotate(-55,130,155)" font-family="Inter">BW Bound (slope=BW)</text>
+  <text x="400" y="35" fill="var(--accent-blue)" font-size="10" text-anchor="middle" font-family="Inter">Compute Bound (Peak FLOPS)</text>
+  <circle cx="105" cy="220" r="8" fill="var(--accent-orange)"/>
+  <text x="115" y="210" fill="var(--accent-orange)" font-size="10" font-family="Inter">Decode Attn</text>
+  <text x="115" y="223" fill="var(--accent-orange)" font-size="9" font-family="Inter">(低AI，内存瓶颈)</text>
+  <circle cx="420" cy="58" r="8" fill="var(--accent-green)"/>
+  <text x="430" y="52" fill="var(--accent-green)" font-size="10" font-family="Inter">Prefill GEMM</text>
+  <text x="430" y="65" fill="var(--accent-green)" font-size="9" font-family="Inter">(高AI，计算瓶颈)</text>
+  <circle cx="240" cy="45" r="6" fill="var(--accent-yellow)"/>
+  <line x1="240" y1="45" x2="240" y2="255" stroke="var(--accent-yellow)" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="245" y="270" fill="var(--accent-yellow)" font-size="9" font-family="Inter">Ridge Point</text>
+  <text x="60" y="42" fill="var(--text-secondary)" font-size="9" text-anchor="end" font-family="Inter">Peak</text>
+  <text x="300" y="14" fill="var(--text-primary)" font-size="13" text-anchor="middle" font-weight="600" font-family="Inter">Roofline 模型：算术强度决定性能瓶颈</text>
+</svg>
+</div>
+<p>Prefill 阶段（处理输入 prompt）对长度为 $S$ 的序列做完整 Attention，复杂度 $O(S^2 d)$，算术强度高，属于 <strong>compute-bound</strong>。Decode 阶段（逐 token 生成）每步仅计算一个 token 对全部历史 KV 的 Attention，复杂度 $O(Sd)$，算术强度极低，属于 <strong>memory-bandwidth-bound</strong>。这就是为什么 Decode 阶段的 Attention Kernel 优化重点是减少 HBM 读写，而非提高 FLOPS 利用率。</p>
+<h3>vLLM Kernel 生态总览</h3>
+<table>
+<tr><th>类别</th><th>主要工具/实现</th><th>精度支持</th><th>目标硬件</th></tr>
+<tr><td>Attention（标准）</td><td>FlashAttention v2/v3</td><td>FP16, BF16, FP8 KV</td><td>SM≥7.5</td></tr>
+<tr><td>Attention（MLA）</td><td>FlashMLA, CUTLASS MLA</td><td>FP16, BF16</td><td>SM90, SM100</td></tr>
+<tr><td>Attention（通用）</td><td>FlashInfer, Triton</td><td>FP16, BF16, FP8, FP4 KV</td><td>SM≥8.0</td></tr>
+<tr><td>GEMM（全精度）</td><td>CUTLASS W8A8 scaled_mm</td><td>FP8, INT8</td><td>SM75→SM120</td></tr>
+<tr><td>GEMM（量化）</td><td>Marlin W4A16</td><td>INT4 weight, FP16/BF16 act</td><td>SM≥7.5</td></tr>
+<tr><td>GEMM（低精度）</td><td>NVFP4 scaled_mm</td><td>FP4 weight/act</td><td>SM100, SM120</td></tr>
+<tr><td>MoE 路由</td><td>TopK Softmax + Permute</td><td>FP32 routing</td><td>所有 SM</td></tr>
+<tr><td>MoE GEMM</td><td>Marlin MoE, CUTLASS MoE</td><td>W4A16, FP8, BF16</td><td>SM≥7.5</td></tr>
+</table>
+</section>
+
+<!-- ═══ SECTION 1: DISPATCH ═══ -->
+<section id="sec-dispatch">
+<h2>1. 后端选择与分发机制</h2>
+<p>vLLM v1 的 Attention 后端通过枚举注册表统一管理，运行时根据模型架构、数据类型、硬件能力自动选择最优后端。理解这套机制是理解后续所有 Attention Kernel 的前提。</p>
+<h3>1.1 AttentionBackendEnum 完整枚举</h3>
+<p>来源：<span class="filepath">vllm/v1/attention/backends/registry.py:34-90</span></p>
+<table>
+<tr><th>枚举名</th><th>实现类</th><th>特性/适用场景</th></tr>
+<tr><td><code>FLASH_ATTN</code></td><td>FlashAttentionBackend</td><td>标准 FA2/FA3，最常用后端</td></tr>
+<tr><td><code>FLASH_ATTN_DIFFKV</code></td><td>FlashAttentionDiffKVBackend</td><td>K/V head 尺寸不同时</td></tr>
+<tr><td><code>FLASH_ATTN_MLA</code></td><td>FlashAttnMLABackend</td><td>FlashAttention v3 + MLA</td></tr>
+<tr><td><code>FLASHINFER</code></td><td>FlashInferBackend</td><td>FlashInfer 库，支持级联 Attention</td></tr>
+<tr><td><code>FLASHINFER_MLA</code></td><td>FlashInferMLABackend</td><td>FlashInfer + MLA</td></tr>
+<tr><td><code>FLASHINFER_MLA_SPARSE</code></td><td>FlashInferMLASparseBackend</td><td>稀疏 MLA</td></tr>
+<tr><td><code>TRITON_ATTN</code></td><td>TritonAttentionBackend</td><td>纯 Triton，per-head quant scales</td></tr>
+<tr><td><code>TRITON_MLA</code></td><td>TritonMLABackend</td><td>Triton + MLA</td></tr>
+<tr><td><code>CUTLASS_MLA</code></td><td>CutlassMLABackend</td><td>CUTLASS MLA，SM90+</td></tr>
+<tr><td><code>FLASHMLA</code></td><td>FlashMLABackend</td><td>FlashMLA，SM90/SM100，block_size=64</td></tr>
+<tr><td><code>FLASHMLA_SPARSE</code></td><td>FlashMLASparseBackend</td><td>稀疏 FlashMLA</td></tr>
+<tr><td><code>ROCM_ATTN</code></td><td>RocmAttentionBackend</td><td>AMD ROCm gfx90a/gfx942</td></tr>
+<tr><td><code>ROCM_AITER_FA</code></td><td>AiterFlashAttentionBackend</td><td>AMD AIter 库 FA</td></tr>
+<tr><td><code>ROCM_AITER_MLA</code></td><td>AiterMLABackend</td><td>AMD AIter MLA</td></tr>
+<tr><td><code>FLEX_ATTENTION</code></td><td>FlexAttentionBackend</td><td>PyTorch Flex Attention</td></tr>
+<tr><td><code>TREE_ATTN</code></td><td>TreeAttentionBackend</td><td>Tree Attention（推测解码）</td></tr>
+<tr><td><code>NO_ATTENTION</code></td><td>NoAttentionBackend</td><td>无 Attention 层（纯 SSM 模型）</td></tr>
+</table>
+<h3>1.2 选择参数：AttentionSelectorConfig</h3>
+<p>来源：<span class="filepath">vllm/v1/attention/selector.py:21-47</span></p>
+<pre><code class="language-python">class AttentionSelectorConfig(NamedTuple):
+    head_size: int             # KV head 维度
+    dtype: torch.dtype         # 计算精度 (fp16, bf16)
+    kv_cache_dtype: CacheDType | None  # KV cache 存储精度 (fp8, fp4, auto...)
+    block_size: int | None     # Paged KV block 大小
+    use_mla: bool = False      # 是否使用 MLA（DeepSeek 系列）
+    has_sink: bool = False     # 是否有 sink token（StreamingLLM）
+    use_sparse: bool = False   # 稀疏 Attention
+    use_mm_prefix: bool = False
+    use_per_head_quant_scales: bool = False  # per-token-head KV 量化 scale
+    attn_type: str = AttentionType.DECODER
+    use_non_causal: bool = False</code></pre>
+<h3>1.3 后端选择流程图</h3>
+<div class="svg-wrap">
+<svg viewBox="0 0 440 600" width="440" height="600">
+<defs>
+  <marker id="a1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="var(--text-secondary)"/></marker>
+  <marker id="a2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="var(--accent-green)"/></marker>
+  <marker id="a3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="var(--accent-red)"/></marker>
+</defs>
+<rect width="440" height="600" fill="var(--bg-card)" rx="8"/>
+<rect x="120" y="18" width="200" height="38" rx="6" fill="rgba(74,158,255,.15)" stroke="var(--accent-blue)"/>
+<text x="220" y="34" text-anchor="middle" fill="var(--accent-blue)" font-family="Inter" font-size="12" font-weight="600">get_attn_backend()</text>
+<text x="220" y="50" text-anchor="middle" fill="var(--accent-blue)" font-family="Inter" font-size="10">selector.py</text>
+<line x1="220" y1="56" x2="220" y2="76" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#a1)"/>
+<polygon points="220,76 310,108 220,140 130,108" fill="rgba(188,140,255,.12)" stroke="var(--accent-purple)"/>
+<text x="220" y="105" text-anchor="middle" fill="var(--accent-purple)" font-family="Inter" font-size="11" font-weight="500">use_mla?</text>
+<text x="220" y="120" text-anchor="middle" fill="var(--accent-purple)" font-family="Inter" font-size="9">MLA 架构（DeepSeek V2+）</text>
+<line x1="310" y1="108" x2="360" y2="108" stroke="var(--accent-green)" stroke-width="1.5" marker-end="url(#a2)"/>
+<text x="335" y="103" fill="var(--accent-green)" font-size="9" font-family="Inter">是</text>
+<rect x="358" y="92" width="72" height="32" rx="5" fill="rgba(86,211,100,.12)" stroke="var(--accent-green)"/>
+<text x="394" y="106" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">→ FLASH</text>
+<text x="394" y="118" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">MLA 路径</text>
+<line x1="220" y1="140" x2="220" y2="160" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="207" y="154" fill="var(--accent-red)" font-size="9" font-family="Inter">否</text>
+<polygon points="220,160 310,192 220,224 130,192" fill="rgba(240,136,62,.1)" stroke="var(--accent-orange)"/>
+<text x="220" y="189" text-anchor="middle" fill="var(--accent-orange)" font-family="Inter" font-size="11" font-weight="500">SM ≥ 9.0?</text>
+<text x="220" y="204" text-anchor="middle" fill="var(--accent-orange)" font-family="Inter" font-size="9">Hopper / Blackwell</text>
+<line x1="310" y1="192" x2="360" y2="192" stroke="var(--accent-green)" stroke-width="1.5" marker-end="url(#a2)"/>
+<text x="335" y="187" fill="var(--accent-green)" font-size="9" font-family="Inter">是</text>
+<rect x="358" y="176" width="72" height="32" rx="5" fill="rgba(86,211,100,.12)" stroke="var(--accent-green)"/>
+<text x="394" y="190" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">→ FLASH</text>
+<text x="394" y="202" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">_ATTN v3</text>
+<line x1="220" y1="224" x2="220" y2="244" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="207" y="238" fill="var(--accent-red)" font-size="9" font-family="Inter">否</text>
+<polygon points="220,244 310,276 220,308 130,276" fill="rgba(227,179,65,.1)" stroke="var(--accent-yellow)"/>
+<text x="220" y="272" text-anchor="middle" fill="var(--accent-yellow)" font-family="Inter" font-size="11" font-weight="500">kv_dtype == fp8?</text>
+<text x="220" y="288" text-anchor="middle" fill="var(--accent-yellow)" font-family="Inter" font-size="9">需要 FP8 KV Cache</text>
+<line x1="310" y1="276" x2="360" y2="276" stroke="var(--accent-green)" stroke-width="1.5" marker-end="url(#a2)"/>
+<text x="335" y="271" fill="var(--accent-green)" font-size="9" font-family="Inter">是</text>
+<rect x="358" y="260" width="72" height="32" rx="5" fill="rgba(86,211,100,.12)" stroke="var(--accent-green)"/>
+<text x="394" y="274" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">→ FLASH</text>
+<text x="394" y="286" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">INFER</text>
+<line x1="220" y1="308" x2="220" y2="328" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="207" y="322" fill="var(--accent-red)" font-size="9" font-family="Inter">否</text>
+<polygon points="220,328 310,360 220,392 130,360" fill="rgba(74,158,255,.1)" stroke="var(--accent-blue)"/>
+<text x="220" y="357" text-anchor="middle" fill="var(--accent-blue)" font-family="Inter" font-size="11" font-weight="500">per_head_quant?</text>
+<text x="220" y="372" text-anchor="middle" fill="var(--accent-blue)" font-family="Inter" font-size="9">per-token-head KV 量化</text>
+<line x1="310" y1="360" x2="360" y2="360" stroke="var(--accent-green)" stroke-width="1.5" marker-end="url(#a2)"/>
+<text x="335" y="355" fill="var(--accent-green)" font-size="9" font-family="Inter">是</text>
+<rect x="358" y="344" width="72" height="32" rx="5" fill="rgba(86,211,100,.12)" stroke="var(--accent-green)"/>
+<text x="394" y="358" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">→ TRITON</text>
+<text x="394" y="370" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">_ATTN</text>
+<line x1="220" y1="392" x2="220" y2="420" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="207" y="410" fill="var(--accent-red)" font-size="9" font-family="Inter">否</text>
+<rect x="130" y="420" width="180" height="40" rx="6" fill="rgba(74,158,255,.2)" stroke="var(--accent-blue)"/>
+<text x="220" y="437" text-anchor="middle" fill="var(--accent-blue)" font-family="Inter" font-size="12" font-weight="600">FLASH_ATTN</text>
+<text x="220" y="452" text-anchor="middle" fill="var(--accent-blue)" font-family="Inter" font-size="9">（默认最优后端）</text>
+<text x="220" y="510" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">来源：vllm/v1/attention/selector.py</text>
+<text x="220" y="526" text-anchor="middle" fill="var(--text-secondary)" font-size="9" font-family="Inter">实际逻辑更复杂，含平台过滤、capability 检查等</text>
+</svg>
+</div>
+</section>
+
+<!-- ═══ SECTION 2: FLASHATTENTION ═══ -->
+<section id="sec-fa">
+<h2>2. FlashAttention <span class="badge badge-t1">Tier 1</span></h2>
+<div class="card tier1-card">
+<p><strong>核心文件</strong>：<span class="filepath">vllm/v1/attention/backends/flash_attn.py</span>（47KB）、<span class="filepath">csrc/attention/paged_attention_v1.cu</span>、<span class="filepath">csrc/attention/paged_attention_v2.cu</span></p>
+</div>
+<h3>2.1 标准 Attention 的内存问题</h3>
+<p>标准缩放点积注意力（SDPA）公式为：</p>
+<div class="formula-box">$$O = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d}}\right)V$$</div>
+<p>对于序列长度 $N$，这需要在 HBM 中实例化 $N \times N$ 的注意力矩阵 $S = QK^\top / \sqrt{d}$，峰值显存 $O(N^2)$。当 $N = 128K$ 时（长上下文场景），仅这一张矩阵就需要约 64GB FP16 存储——超过 A100 80GB 的全部显存。FlashAttention 的核心贡献正是通过分块计算彻底消除这张矩阵。</p>
+<h3>2.2 Online Softmax：分块计算的数学基础</h3>
+<p>Online Softmax 维护三个在线统计量 $m_i$（当前最大值）、$\ell_i$（归一化分母）和 $O_i$（累积输出），在逐块处理 K/V 时通过递推更新：</p>
+<div class="formula-box">
+$$m_i^{(\text{new})} = \max\!\left(m_i^{(\text{old})},\; \max_j s_{ij}\right)$$
+$$\ell_i^{(\text{new})} = e^{\,m_i^{(\text{old})} - m_i^{(\text{new})}} \ell_i^{(\text{old})} + \sum_j e^{\,s_{ij} - m_i^{(\text{new})}}$$
+$$O_i^{(\text{new})} = \underbrace{\frac{\ell_i^{(\text{old})}}{\ell_i^{(\text{new})}} e^{\,m_i^{(\text{old})}-m_i^{(\text{new})}}}_{\text{修正旧 }O} \cdot O_i^{(\text{old})} + \frac{1}{\ell_i^{(\text{new})}}\sum_j e^{\,s_{ij}-m_i^{(\text{new})}} v_j$$
+</div>
+<p>可以数学证明：遍历所有 K/V 块后，$O_i^{(\text{final})} = \text{softmax}(QK^\top/\sqrt{d})V$，结果与全量计算等价，但峰值 HBM 用量仅 $O(Nd)$（去掉了 $N^2$ 项）。</p>
+<h3>2.3 SRAM Tiling 策略</h3>
+<p>FlashAttention 将 $Q$ 按行切成块（行块大小 $b_r$），将 $K/V$ 按列切成块（列块大小 $b_c$），每次将一对 $(K_{b_c}, V_{b_c})$ 从 HBM 加载到 SRAM 做内循环。SRAM 总占用：</p>
+<div class="formula-box">$$\text{SRAM usage} = O(b_r \cdot d + b_c \cdot d)$$</div>
+<p>$b_r$ 和 $b_c$ 由片上 SRAM 大小决定，典型值在 SM80（A100）为 $b_r = b_c = 64$ 或 128。</p>
+<div class="anim-box">
+<h4>动画 A1：FlashAttention SRAM Tiling 逐步演示</h4>
+<svg id="svg-fa" viewBox="0 0 700 340" width="100%" height="auto" style="max-width:700px">
+<rect width="700" height="340" fill="var(--bg-code)" rx="8"/>
+<!-- HBM zone -->
+<rect x="8" y="30" width="340" height="160" rx="6" fill="var(--bg-highlight)" stroke="var(--border)"/>
+<text x="178" y="22" text-anchor="middle" fill="var(--text-secondary)" font-size="11" font-family="Inter" font-weight="600">HBM（高带宽内存）</text>
+<!-- Q -->
+<rect x="18" y="40" width="68" height="140" rx="4" fill="rgba(74,158,255,.2)" stroke="var(--accent-blue)"/>
+<text x="52" y="116" text-anchor="middle" fill="var(--accent-blue)" font-size="14" font-weight="700" font-family="Inter">Q</text>
+<text x="52" y="133" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">N×d</text>
+<!-- K -->
+<rect x="110" y="40" width="68" height="140" rx="4" fill="rgba(86,211,100,.15)" stroke="var(--accent-green)"/>
+<text x="144" y="116" text-anchor="middle" fill="var(--accent-green)" font-size="14" font-weight="700" font-family="Inter">K</text>
+<!-- K tile 0 highlight -->
+<rect id="fa-kt0" x="110" y="40" width="68" height="38" rx="4" fill="rgba(86,211,100,.55)" stroke="var(--accent-green)" stroke-width="2" opacity="0"/>
+<!-- V -->
+<rect x="200" y="40" width="68" height="140" rx="4" fill="rgba(240,136,62,.15)" stroke="var(--accent-orange)"/>
+<text x="234" y="116" text-anchor="middle" fill="var(--accent-orange)" font-size="14" font-weight="700" font-family="Inter">V</text>
+<!-- V tile 0 highlight -->
+<rect id="fa-vt0" x="200" y="40" width="68" height="38" rx="4" fill="rgba(240,136,62,.55)" stroke="var(--accent-orange)" stroke-width="2" opacity="0"/>
+<!-- O (HBM output) -->
+<rect x="290" y="40" width="50" height="140" rx="4" fill="rgba(188,140,255,.15)" stroke="var(--accent-purple)" stroke-dasharray="5,3"/>
+<text x="315" y="116" text-anchor="middle" fill="var(--accent-purple)" font-size="14" font-weight="700" font-family="Inter">O</text>
+<!-- O tile highlight -->
+<rect id="fa-ot" x="290" y="40" width="50" height="38" rx="4" fill="rgba(188,140,255,.5)" stroke="var(--accent-purple)" stroke-width="2" opacity="0"/>
+<!-- SRAM zone -->
+<rect x="8" y="215" width="685" height="110" rx="6" fill="rgba(86,211,100,.04)" stroke="var(--accent-green)" stroke-dasharray="6,3"/>
+<text x="350" y="210" text-anchor="middle" fill="var(--accent-green)" font-size="11" font-family="Inter" font-weight="600">SRAM（片上缓存，每 SM 约 192KB）</text>
+<!-- Q tile in SRAM -->
+<rect x="18" y="225" width="68" height="88" rx="4" fill="rgba(74,158,255,.3)" stroke="var(--accent-blue)"/>
+<text x="52" y="264" text-anchor="middle" fill="var(--accent-blue)" font-size="11" font-weight="600" font-family="Inter">Q_br</text>
+<text x="52" y="280" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">（常驻片上）</text>
+<!-- K tile SRAM -->
+<rect id="fa-ks" x="110" y="225" width="68" height="88" rx="4" fill="rgba(86,211,100,.05)" stroke="var(--accent-green)" stroke-dasharray="4,3"/>
+<text x="144" y="264" text-anchor="middle" fill="var(--accent-green)" font-size="11" font-family="Inter" id="fa-ks-t" opacity="0.4">K_bc</text>
+<!-- V tile SRAM -->
+<rect id="fa-vs" x="200" y="225" width="68" height="88" rx="4" fill="rgba(240,136,62,.05)" stroke="var(--accent-orange)" stroke-dasharray="4,3"/>
+<text x="234" y="264" text-anchor="middle" fill="var(--accent-orange)" font-size="11" font-family="Inter" id="fa-vs-t" opacity="0.4">V_bc</text>
+<!-- softmax stats -->
+<rect id="fa-stat" x="295" y="225" width="130" height="88" rx="4" fill="rgba(227,179,65,.05)" stroke="var(--accent-yellow)" stroke-dasharray="4,3"/>
+<text id="fa-stat-t" x="360" y="258" text-anchor="middle" fill="var(--accent-yellow)" font-size="11" font-family="Inter" opacity="0.4">m, ℓ 统计量</text>
+<text id="fa-stat-t2" x="360" y="276" text-anchor="middle" fill="var(--accent-yellow)" font-size="9" font-family="Inter" opacity="0.4">online softmax</text>
+<!-- C_reg -->
+<rect id="fa-creg" x="445" y="225" width="100" height="88" rx="4" fill="rgba(188,140,255,.05)" stroke="var(--accent-purple)" stroke-dasharray="4,3"/>
+<text id="fa-creg-t" x="495" y="264" text-anchor="middle" fill="var(--accent-purple)" font-size="11" font-family="Inter" opacity="0.4">O_partial</text>
+<text id="fa-creg-t2" x="495" y="280" text-anchor="middle" fill="var(--accent-purple)" font-size="9" font-family="Inter" opacity="0.4">（寄存器）</text>
+<!-- Arrows -->
+<line id="fa-arr-k" x1="144" y1="190" x2="144" y2="222" stroke="var(--accent-green)" stroke-width="2" stroke-dasharray="4,3" opacity="0" marker-end="url(#arr-g)"/>
+<line id="fa-arr-v" x1="234" y1="190" x2="234" y2="222" stroke="var(--accent-orange)" stroke-width="2" stroke-dasharray="4,3" opacity="0" marker-end="url(#arr-o)"/>
+<line id="fa-arr-store" x1="315" y1="212" x2="315" y2="178" stroke="var(--accent-purple)" stroke-width="2" stroke-dasharray="4,3" opacity="0" marker-end="url(#arr-p)"/>
+<text id="fa-load-lbl" x="145" y="206" fill="var(--accent-green)" font-size="9" font-family="Inter" opacity="0">load</text>
+<text id="fa-store-lbl" x="320" y="200" fill="var(--accent-purple)" font-size="9" font-family="Inter" opacity="0">store</text>
+<!-- K tile 1 -->
+<rect id="fa-kt1" x="110" y="82" width="68" height="38" rx="4" fill="rgba(86,211,100,.55)" stroke="var(--accent-green)" stroke-width="2" opacity="0"/>
+<rect id="fa-vt1" x="200" y="82" width="68" height="38" rx="4" fill="rgba(240,136,62,.55)" stroke="var(--accent-orange)" stroke-width="2" opacity="0"/>
+<defs>
+  <marker id="arr-g" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--accent-green)"/></marker>
+  <marker id="arr-o" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--accent-orange)"/></marker>
+  <marker id="arr-p" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--accent-purple)"/></marker>
+</defs>
+</svg>
+<div id="fa-anim-controls"></div>
+</div>
+<h3>2.4 Paged KV Cache</h3>
+<p>vLLM 采用 PagedAttention 机制，将 KV Cache 按固定大小的物理块（block）管理，逻辑序列通过 block table 映射到非连续的物理内存：</p>
+<div class="formula-box">$$\text{block\_table}[\text{seq\_id}][\text{logical\_block}] = \text{physical\_block\_id}$$</div>
+<p>FlashAttention 后端支持 <code>MultipleOf(16)</code> 的任意 block size；混合模型（Mamba+Attention）因 FA NaN 传播问题限制为 <code>[16, 32, 64]</code>。</p>
+<div class="warn">⚠ <strong>已知 Bug</strong>：当混合模型使用 FP32 SSM cache 时，FlashAttention 某些 block size 会触发 NaN 传播。参见 <a href="https://github.com/Dao-AILab/flash-attention/issues/1974" target="_blank">flash-attention#1974</a>。源码注释：<code>flash_attn.py:91</code></div>
+<div class="svg-wrap">
+<svg viewBox="0 0 680 280" width="680" height="280">
+<rect width="680" height="280" fill="var(--bg-card)" rx="8"/>
+<text x="340" y="20" text-anchor="middle" fill="var(--text-primary)" font-size="13" font-weight="600" font-family="Inter">Paged KV Cache：不连续物理块存储</text>
+<!-- Logical seqs -->
+<text x="80" y="42" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">逻辑序列</text>
+<rect x="10" y="52" width="28" height="18" rx="3" fill="rgba(74,158,255,.7)"/><rect x="42" y="52" width="28" height="18" rx="3" fill="rgba(74,158,255,.5)"/><rect x="74" y="52" width="28" height="18" rx="3" fill="rgba(74,158,255,.3)" stroke="var(--accent-blue)" stroke-dasharray="3,2"/>
+<text x="3" y="85" fill="var(--accent-blue)" font-size="9" font-family="Inter">Seq0 [blk 0,1,2?]</text>
+<rect x="10" y="98" width="28" height="18" rx="3" fill="rgba(86,211,100,.7)"/><rect x="42" y="98" width="28" height="18" rx="3" fill="rgba(86,211,100,.5)"/><rect x="74" y="98" width="28" height="18" rx="3" fill="rgba(86,211,100,.3)"/>
+<text x="3" y="131" fill="var(--accent-green)" font-size="9" font-family="Inter">Seq1 [blk 0,1,2]</text>
+<rect x="10" y="144" width="28" height="18" rx="3" fill="rgba(240,136,62,.7)"/>
+<text x="3" y="177" fill="var(--accent-orange)" font-size="9" font-family="Inter">Seq2 [blk 0]</text>
+<!-- block_table -->
+<text x="210" y="42" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">block_table</text>
+<rect x="160" y="48" width="108" height="130" rx="5" fill="var(--bg-code)" stroke="var(--border)"/>
+<rect x="165" y="54" width="96" height="20" rx="3" fill="rgba(74,158,255,.12)"/><text x="213" y="68" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">Seq0: [0, 3, ?]</text>
+<rect x="165" y="78" width="96" height="20" rx="3" fill="rgba(86,211,100,.12)"/><text x="213" y="92" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">Seq1: [1, 5, 7]</text>
+<rect x="165" y="102" width="96" height="20" rx="3" fill="rgba(240,136,62,.12)"/><text x="213" y="116" text-anchor="middle" fill="var(--accent-orange)" font-size="9" font-family="Inter">Seq2: [2, -, -]</text>
+<!-- Physical pool -->
+<text x="500" y="42" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">物理内存池</text>
+<rect x="300" y="48" width="372" height="180" rx="6" fill="var(--bg-code)" stroke="var(--border)"/>
+<!-- 5 cols × 2 rows of blocks -->
+<rect x="308" y="56" width="64" height="40" rx="3" fill="rgba(74,158,255,.5)" stroke="var(--accent-blue)"/><text x="340" y="81" text-anchor="middle" fill="var(--accent-blue)" font-size="10" font-family="Inter">Blk 0</text>
+<rect x="378" y="56" width="64" height="40" rx="3" fill="rgba(86,211,100,.5)" stroke="var(--accent-green)"/><text x="410" y="81" text-anchor="middle" fill="var(--accent-green)" font-size="10" font-family="Inter">Blk 1</text>
+<rect x="448" y="56" width="64" height="40" rx="3" fill="rgba(240,136,62,.5)" stroke="var(--accent-orange)"/><text x="480" y="81" text-anchor="middle" fill="var(--accent-orange)" font-size="10" font-family="Inter">Blk 2</text>
+<rect x="518" y="56" width="64" height="40" rx="3" fill="rgba(74,158,255,.4)" stroke="var(--accent-blue)"/><text x="550" y="81" text-anchor="middle" fill="var(--accent-blue)" font-size="10" font-family="Inter">Blk 3</text>
+<rect x="588" y="56" width="76" height="40" rx="3" fill="var(--bg-highlight)" stroke="var(--border)"/><text x="626" y="81" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">Free</text>
+<rect x="308" y="104" width="64" height="40" rx="3" fill="var(--bg-highlight)" stroke="var(--border)"/><text x="340" y="129" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">Free</text>
+<rect x="378" y="104" width="64" height="40" rx="3" fill="rgba(86,211,100,.4)" stroke="var(--accent-green)"/><text x="410" y="129" text-anchor="middle" fill="var(--accent-green)" font-size="10" font-family="Inter">Blk 5</text>
+<rect x="448" y="104" width="64" height="40" rx="3" fill="var(--bg-highlight)" stroke="var(--border)"/><text x="480" y="129" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">Free</text>
+<rect x="518" y="104" width="64" height="40" rx="3" fill="rgba(86,211,100,.4)" stroke="var(--accent-green)"/><text x="550" y="129" text-anchor="middle" fill="var(--accent-green)" font-size="10" font-family="Inter">Blk 7</text>
+<rect x="588" y="104" width="76" height="40" rx="3" fill="var(--bg-highlight)" stroke="var(--border)"/><text x="626" y="129" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">Free</text>
+<text x="340" y="258" text-anchor="middle" fill="var(--text-secondary)" font-size="9" font-family="Inter">物理块可不连续；block_table 记录逻辑→物理映射；block_size 决定每块 token 数</text>
+</svg>
+</div>
+<h3>2.5 FP8 KV Cache 量化</h3>
+<p>当 <code>kv_cache_dtype="fp8"</code> 时，K/V 以 E4M3 格式存储，Attention 计算前按 scale 还原：</p>
+<div class="formula-box">$$K_{\text{restored}} = K_{\text{fp8}} \cdot s_K, \quad V_{\text{restored}} = V_{\text{fp8}} \cdot s_V$$</div>
+<p>FlashInfer 后端的 <code>_trtllm_prefill_attn_kvfp8_dequant</code> Triton kernel 实现了融合的 FP8 反量化+Attention 计算。</p>
+<h3>2.6 Cascade Attention（共享前缀优化）</h3>
+<p>当多个序列共享相同前缀（如 system prompt）时，FlashAttention 后端将 Attention 分为两阶段：</p>
+<ol style="margin:.5rem 0 .5rem 1.5rem;line-height:2">
+<li><strong>Prefix 阶段</strong>：所有序列共用已缓存的 prefix KV，计算 $O_{\text{prefix}}, \text{LSE}_{\text{prefix}}$</li>
+<li><strong>Suffix 阶段</strong>：各序列独立计算 $O_{\text{suffix}}, \text{LSE}_{\text{suffix}}$</li>
+</ol>
+<p>最后通过 <code>merge_attn_states</code> 将两阶段结果按 LSE 加权合并：</p>
+<div class="formula-box">$$O = \frac{\text{LSE}_p \cdot O_p + \text{LSE}_s \cdot O_s}{\text{LSE}_p + \text{LSE}_s} \quad \text{（对数域合并）}$$</div>
+<pre><code class="language-python"># flash_attn.py - FlashAttentionBackend
+class FlashAttentionBackend(AttentionBackend):
+    supported_dtypes = [torch.float16, torch.bfloat16]
+    supported_kv_cache_dtypes = ["auto", "float16", "bfloat16", "fp8", "fp8_e4m3"]
+
+    @staticmethod
+    def get_supported_kernel_block_sizes():
+        # Hybrid Mamba+Attention 模型：避免 FA NaN 传播
+        # Ref: https://github.com/Dao-AILab/flash-attention/issues/1974
+        if model_config.is_hybrid and cache_config.mamba_ssm_cache_dtype == "float32":
+            return [16, 32, 64]  # 而非 MultipleOf(16)
+        return [MultipleOf(16)]
+
+    forward_includes_kv_cache_update: bool = False  # FA 不负责 KV 写回</code></pre>
+</section>
+
+<!-- ═══ SECTION 3: FLASHINFER ═══ -->
+<section id="sec-flashinfer">
+<h2>3. FlashInfer <span class="badge badge-t2">Tier 2</span></h2>
+<div class="card tier2-card">
+<p><strong>核心文件</strong>：<span class="filepath">vllm/v1/attention/backends/flashinfer.py</span>（73KB）</p>
+</div>
+<p>FlashInfer 是专为 LLM 推理优化的 Attention 库，与 FlashAttention 的最大区别在于其 <strong>Plan/Run 两阶段 API</strong> 设计：Plan 阶段预计算元数据和工作区分配，Run 阶段高效执行 Kernel，避免重复的动态形状推断开销。</p>
+<h3>3.1 核心 API 对象</h3>
+<table>
+<tr><th>API 对象</th><th>用途</th></tr>
+<tr><td><code>BatchDecodeWithPagedKVCacheWrapper</code></td><td>Decode 阶段：每 step 单 token，高度优化的 Batch Decode</td></tr>
+<tr><td><code>BatchPrefillWithPagedKVCacheWrapper</code></td><td>Prefill 阶段：批量处理输入 prompt</td></tr>
+<tr><td><code>MultiLevelCascadeAttentionWrapper</code></td><td>多级级联 Attention（极长上下文）</td></tr>
+</table>
+<h3>3.2 Workspace Buffer 管理</h3>
+<pre><code class="language-python"># flashinfer.py
+FLASHINFER_WORKSPACE_BUFFER_SIZE_BATCH_INVARIANT = 2048 * 1024 * 1024  # 2GB
+
+# 推理开始时一次性分配，避免运行时碎片
+trtllm_gen_workspace_buffer = torch.zeros(
+    VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE,
+    dtype=torch.uint8, device='cuda'
+)
+</code></pre>
+<h3>3.3 量化 KV Cache 支持</h3>
+<ul style="margin:.5rem 0 .5rem 1.5rem;line-height:2">
+<li><strong>FP8 KV</strong>：E4M3 格式，per-tensor scale</li>
+<li><strong>FP4 KV</strong>：通过 <code>FP4Tensor</code> 类型，blockwise scale（每 16 元素一个 FP8 scale）</li>
+</ul>
+</section>
+
+<!-- ═══ SECTION 4: TRTLLM-GEN ═══ -->
+<section id="sec-trtllm">
+<h2>4. TRTLLM-GEN <span class="badge badge-t2">Tier 2</span></h2>
+<div class="info">ℹ TRTLLM-GEN 不是独立的 vLLM backend enum，而是通过 FlashInfer 库暴露的高性能 CUDA Kernel 集合。</div>
+<h3>4.1 集成方式</h3>
+<pre><code class="language-python"># flashinfer.py 第 17-18 行
+from flashinfer.decode import trtllm_batch_decode_with_kv_cache
+from flashinfer.prefill import trtllm_batch_context_with_kv_cache</code></pre>
+<p>这两个函数是 NVIDIA TensorRT-LLM 团队为 FlashInfer 贡献的高优化 Kernel，分别负责：</p>
+<ul style="margin:.5rem 0 .5rem 1.5rem;line-height:2">
+<li><strong><code>trtllm_batch_decode_with_kv_cache</code></strong>：Decode 阶段 Batch Attention，专为 single-token decode 优化，利用 Persistent Kernel 减少 kernel launch overhead</li>
+<li><strong><code>trtllm_batch_context_with_kv_cache</code></strong>：Context/Prefill 阶段 Batch Attention，支持变长序列批处理</li>
+</ul>
+<h3>4.2 BatchDCPPrefillWrapper 双路径设计</h3>
+<p><code>BatchDCPPrefillWrapper.plan()</code> 将 Prefill 分为两路：</p>
+<ul style="margin:.5rem 0 .5rem 1.5rem;line-height:2">
+<li><strong>Context tokens</strong>（已有 KV Cache 的旧 token）→ <code>trtllm_batch_context_with_kv_cache</code></li>
+<li><strong>New tokens</strong>（本次新增的 token）→ 标准 Prefill Attention</li>
+</ul>
+<h3>4.3 SM90+ Persistent Kernel</h3>
+<p>在 Hopper（SM90）及以上硬件，TRTLLM-GEN 使用 Persistent Kernel 设计：threadblock 在整个推理步骤期间持续运行，从队列中拉取工作，而非为每个 sequence 单独 launch kernel，大幅降低 kernel launch 延迟。</p>
+</section>
+
+<!-- ═══ SECTION 5: FLASHMLA ═══ -->
+<section id="sec-mla">
+<h2>5. FlashMLA <span class="badge badge-t1">Tier 1</span></h2>
+<div class="card tier1-card">
+<p><strong>核心文件</strong>：<span class="filepath">vllm/v1/attention/backends/mla/flashmla.py</span>（12KB）、<span class="filepath">csrc/attention/mla/sm100_cutlass_mla_kernel.cu</span>（12KB）</p>
+<p><strong>支持硬件</strong>：SM90（Hopper H100/H200）、SM100（Blackwell B200）</p>
+<p><strong>固定 block_size</strong>：64（不可配置）</p>
+</div>
+<h3>5.1 MLA 数学动机（DeepSeek-V2 创新）</h3>
+<p>标准 Multi-Head Attention（MHA）的 KV Cache 大小随序列长度线性增长：</p>
+<div class="formula-box">$$\text{MHA KV Cache size} = 2 \cdot n_{\text{heads}} \cdot d_{\text{head}} \cdot L \cdot \text{bytes}$$</div>
+<p>对于 DeepSeek-V3（128 heads, d_head=128, fp16），每 token 需 2×128×128×2 = 65536 字节 ≈ 64KB，100K token 上下文需 6.4GB——仅 KV Cache 就已接近 GPU 显存上限。</p>
+<p>MLA（Multi-head Latent Attention）通过低秩分解将 KV 压缩为潜变量 $c^{KV}$：</p>
+<div class="formula-box">
+$$c^{KV} = W_{DKV} x \in \mathbb{R}^{d_c}, \quad d_c \ll n_{\text{heads}} \cdot d_{\text{head}}$$
+$$K = W_{UK} c^{KV} \in \mathbb{R}^{n_{\text{heads}} \cdot d_{\text{head}}}, \quad V = W_{UV} c^{KV}$$
+</div>
+<p>KV Cache 只存低维潜变量 $c^{KV}$，解压在 Attention 计算时即时进行（"Absorption Trick"）。</p>
+<p>位置编码（RoPE）部分需要特殊处理——不能吸收进权重矩阵，需单独保留：</p>
+<div class="formula-box">
+$$Q = \left[W_{UQ}c^Q \;;\; q_{pe}\right], \quad K = \left[W_{UK}c^{KV} \;;\; k_{pe}\right]$$
+</div>
+<p>实际 KV Cache 存储格式：$[c^{KV},\; k_{pe}]$ 拼接，对应代码中的 <code>kv_c_and_k_pe_cache</code>。</p>
+<div class="anim-box">
+<h4>动画 A3：MLA KV 压缩原理</h4>
+<svg id="svg-mla" viewBox="0 0 620 260" width="100%" height="auto" style="max-width:620px">
+<rect width="620" height="260" fill="var(--bg-code)" rx="8"/>
+<!-- Standard MHA KV -->
+<rect id="mla-mha" x="10" y="50" width="190" height="45" rx="5" fill="rgba(74,158,255,.25)" stroke="var(--accent-blue)" stroke-width="2"/>
+<text x="105" y="70" text-anchor="middle" fill="var(--accent-blue)" font-size="11" font-weight="600" font-family="Inter">标准 MHA KV Cache</text>
+<text x="105" y="86" text-anchor="middle" fill="var(--accent-blue)" font-size="10" font-family="Inter">2048 维 (128h × 16d) × L tokens</text>
+<!-- W_DKV arrow -->
+<line id="mla-a1" x1="200" y1="72" x2="262" y2="72" stroke="var(--accent-orange)" stroke-width="2" opacity="0" marker-end="url(#arr-o2)"/>
+<text id="mla-wdkv" x="231" y="64" text-anchor="middle" fill="var(--accent-orange)" font-size="9" font-family="Inter" opacity="0">W_DKV</text>
+<!-- c^KV compressed -->
+<rect id="mla-ckv" x="265" y="52" width="55" height="40" rx="5" fill="rgba(240,136,62,.2)" stroke="var(--accent-orange)" opacity="0"/>
+<text id="mla-ckv-t" x="292" y="70" text-anchor="middle" fill="var(--accent-orange)" font-size="10" font-weight="600" font-family="Inter" opacity="0">c^KV</text>
+<text id="mla-ckv-d" x="292" y="84" text-anchor="middle" fill="var(--accent-orange)" font-size="9" font-family="Inter" opacity="0">512 维</text>
+<!-- W_UK expand arrow -->
+<line id="mla-a2" x1="320" y1="72" x2="372" y2="72" stroke="var(--accent-green)" stroke-width="2" opacity="0" marker-end="url(#arr-g2)"/>
+<text id="mla-wuk" x="346" y="64" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter" opacity="0">W_UK</text>
+<!-- K expanded -->
+<rect id="mla-kexp" x="375" y="52" width="90" height="40" rx="5" fill="rgba(86,211,100,.15)" stroke="var(--accent-green)" opacity="0"/>
+<text id="mla-kexp-t" x="420" y="70" text-anchor="middle" fill="var(--accent-green)" font-size="10" font-family="Inter" opacity="0">K（还原）</text>
+<text id="mla-kexp-d" x="420" y="84" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter" opacity="0">计算时解压</text>
+<!-- k_pe concatenation -->
+<rect id="mla-kpe" x="265" y="104" width="38" height="28" rx="4" fill="rgba(255,119,114,.2)" stroke="var(--accent-red)" opacity="0"/>
+<text id="mla-kpe-t" x="284" y="120" text-anchor="middle" fill="var(--accent-red)" font-size="9" font-family="Inter" opacity="0">k_pe</text>
+<text id="mla-kpe-d" x="284" y="130" text-anchor="middle" fill="var(--accent-red)" font-size="8" font-family="Inter" opacity="0">64维 RoPE</text>
+<!-- Stored format -->
+<rect id="mla-stored" x="265" y="148" width="100" height="32" rx="4" fill="rgba(227,179,65,.15)" stroke="var(--accent-yellow)" opacity="0"/>
+<text id="mla-stored-t" x="315" y="163" text-anchor="middle" fill="var(--accent-yellow)" font-size="10" font-weight="600" font-family="Inter" opacity="0">实际存储格式</text>
+<text id="mla-stored-d" x="315" y="176" text-anchor="middle" fill="var(--accent-yellow)" font-size="9" font-family="Inter" opacity="0">[c^KV ; k_pe] = 576 维</text>
+<!-- Savings bar -->
+<rect id="mla-bar1" x="420" y="104" width="0" height="20" rx="3" fill="rgba(74,158,255,.6)"/>
+<rect id="mla-bar2" x="420" y="132" width="0" height="20" rx="3" fill="rgba(240,136,62,.6)"/>
+<text id="mla-bl1" x="415" y="118" fill="var(--accent-blue)" font-size="9" font-family="Inter" text-anchor="end" opacity="0">MHA: 2048</text>
+<text id="mla-bl2" x="415" y="146" fill="var(--accent-orange)" font-size="9" font-family="Inter" text-anchor="end" opacity="0">MLA: 576</text>
+<text id="mla-save" x="310" y="215" text-anchor="middle" fill="var(--accent-green)" font-size="13" font-weight="700" font-family="Inter" opacity="0">节省约 72% KV Cache 空间！</text>
+<defs>
+  <marker id="arr-o2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--accent-orange)"/></marker>
+  <marker id="arr-g2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--accent-green)"/></marker>
+</defs>
+</svg>
+<div id="mla-anim-controls"></div>
+</div>
+<h3>5.2 CUTLASS MLA SM100 Kernel</h3>
+<p>来源：<span class="filepath">csrc/attention/mla/sm100_cutlass_mla_kernel.cu:69-90</span>。使用 CuTe 张量库描述 Tile 形状：</p>
+<pre><code class="language-cpp">template &lt;typename T, typename TOut, bool IsPaged128,
+          typename PersistenceOption = IsPersistent&lt;true&gt;&gt;
+struct MlaSm100 {
+  using Element    = T;          // 计算精度（bf16/fp16）
+  using ElementAcc = float;      // 累加精度
+  using ElementOut = TOut;
+
+  // Tile: (H=128 heads, N=128 KV tokens, D=(512 latent, 64 rope))
+  using TileShape    = Shape&lt;_128, _128, Shape&lt;_512, _64&gt;&gt;;
+  using TileShapeH   = cute::tuple_element_t&lt;0, TileShape&gt;;  // = _128
+  using TileShapeD   = cute::tuple_element_t&lt;2, TileShape&gt;;  // = Shape&lt;_512,_64&gt;
+
+  // Problem shape: H K (D_latent D_rope) B
+  using ProblemShape = cute::tuple&lt;TileShapeH, int, TileShapeD, int&gt;;
+
+  using StrideQ = cute::tuple&lt;int64_t, _1, int64_t&gt;;  // H, D, B stride
+  using StrideK = cute::tuple&lt;int64_t, _1, int64_t&gt;;
+  using StrideLSE = cute::tuple&lt;_1, int&gt;;              // H, B stride
+
+  // Persistent tile scheduler for Blackwell SM100
+  using TileScheduler = std::conditional_t&lt;
+      PersistenceOption::value,
+      Sm100MlaPersistentTileScheduler,
+      Sm100MlaIndividualTileScheduler&gt;;
+};</code></pre>
+<p>函数入口（需要 CUDA ≥ 12.4）：</p>
+<pre><code class="language-cpp">void sm100_cutlass_mla_decode(
+    torch::Tensor const&amp; out,    // [B, H, D_out]
+    torch::Tensor const&amp; lse,    // [B, H]    log-sum-exp
+    torch::Tensor const&amp; q_nope, // [B, H, D_latent]  无位置编码 query
+    torch::Tensor const&amp; q_pe,   // [B, H, D_rope]    位置编码 query
+    torch::Tensor const&amp; kv_c_and_k_pe_cache,  // [B, blocks, block_sz, D_c+D_rope]
+    torch::Tensor const&amp; seq_lens,
+    torch::Tensor const&amp; page_table,
+    torch::Tensor const&amp; workspace,
+    double sm_scale,
+    int64_t num_kv_splits);</code></pre>
+<h3>5.3 MLA 后端变体总览</h3>
+<table>
+<tr><th>Backend 枚举</th><th>实现文件</th><th>特点</th></tr>
+<tr><td><code>FLASHMLA</code></td><td>mla/flashmla.py</td><td>SM90/SM100，block_size=64，最快</td></tr>
+<tr><td><code>FLASHMLA_SPARSE</code></td><td>mla/flashmla_sparse.py</td><td>稀疏 Attention 模式（34KB）</td></tr>
+<tr><td><code>CUTLASS_MLA</code></td><td>mla/cutlass_mla.py</td><td>CUTLASS 直接实现（8.9KB）</td></tr>
+<tr><td><code>FLASH_ATTN_MLA</code></td><td>mla/flashattn_mla.py</td><td>FlashAttention v3 + MLA（13KB）</td></tr>
+<tr><td><code>FLASHINFER_MLA</code></td><td>mla/flashinfer_mla.py</td><td>FlashInfer + MLA（6.8KB）</td></tr>
+<tr><td><code>FLASHINFER_MLA_SPARSE</code></td><td>mla/flashinfer_mla_sparse.py</td><td>FlashInfer 稀疏 MLA（13KB）</td></tr>
+<tr><td><code>TRITON_MLA</code></td><td>mla/triton_mla.py</td><td>纯 Triton MLA（6.6KB）</td></tr>
+</table>
+</section>
+
+<!-- ═══ SECTION 6: TRITON ═══ -->
+<section id="sec-triton">
+<h2>6. Triton Attention <span class="badge badge-t2">Tier 2</span></h2>
+<div class="card tier2-card">
+<p><strong>核心文件</strong>：<span class="filepath">vllm/v1/attention/backends/triton_attn.py</span>（29KB）、<span class="filepath">vllm/v1/attention/ops/triton_unified_attention.py</span>（45KB）、<span class="filepath">vllm/v1/attention/ops/triton_decode_attention.py</span>（21KB）</p>
+</div>
+<h3>6.1 两阶段 Flash Decoding</h3>
+<p>Triton Attention 采用 Split-K（Flash Decoding）策略，将 KV 序列切成多段并行处理：</p>
+<pre><code class="language-python"># triton_attn.py
+MIN_LAUNCH_GRID_SIZE_2D = 128
+NUM_PAR_SOFTMAX_SEGMENTS = 16   # 并行 softmax 分段数</code></pre>
+<p><strong>Stage 1</strong>（<code>_fwd_kernel_stage1</code>）：每段独立计算局部 Attention，输出局部 $O_s$ 和 $(m_s, \ell_s)$</p>
+<p><strong>Stage 2</strong>：跨段归约：</p>
+<div class="formula-box">$$m^* = \max_s m_s, \quad \ell^* = \sum_s e^{m_s - m^*} \ell_s, \quad O = \sum_s \frac{e^{m_s - m^*} \ell_s}{\ell^*} O_s$$</div>
+<h3>6.2 KV 量化模式（<code>KV_QUANT_MODE</code>）</h3>
+<table>
+<tr><th>值</th><th>量化方式</th><th>说明</th></tr>
+<tr><td>0</td><td>无量化</td><td>直接 cast 到计算精度</td></tr>
+<tr><td>1</td><td>FP8 per-tensor</td><td>用 tensor_scale 全局反量化</td></tr>
+<tr><td>≥2</td><td>per-token-head</td><td>每个 token 每个 head 独立 scale，延后应用</td></tr>
+</table>
+<p>Triton backend 是唯一支持 <code>use_per_head_quant_scales=True</code> 的后端，这也是 selector.py 中触发选择 Triton 的条件之一。</p>
+</section>
+
+
+<!-- ═══ SECTION 7: GEMM BASICS ═══ -->
+<section id="sec-gemm-basics">
+<h2>7. GEMM 基础与硬件演进</h2>
+<h3>7.1 矩阵乘法数学模型</h3>
+<p>标准 GEMM（General Matrix Multiply）：</p>
+<div class="formula-box">$$C[m,n] = \sum_{k=0}^{K-1} A[m,k] \cdot B[k,n]$$</div>
+<p>量化 GEMM（W8A8）：权重与激活分别量化后做整数矩阵乘，最后在 epilogue 反量化：</p>
+<div class="formula-box">$$C = \text{dequant}(A_{\text{int8}} \cdot B_{\text{int8}}) \cdot s_A \cdot s_B + \text{bias}$$</div>
+<h3>7.2 Tensor Core 指令演进</h3>
+<table>
+<tr><th>架构</th><th>SM 版本</th><th>关键指令</th><th>峰值吞吐（FP8）</th></tr>
+<tr><td>Turing</td><td>SM75</td><td><code>mma.sync m16n8k8</code> (FP16/INT8)</td><td>—</td></tr>
+<tr><td>Ampere</td><td>SM80</td><td><code>mma.sync m16n8k16</code> (BF16/TF32/INT8)</td><td>—</td></tr>
+<tr><td>Ada Lovelace</td><td>SM89</td><td><code>mma.sync m16n8k16</code> (FP8 E4M3/E5M2)</td><td>~3.9 PFLOPS</td></tr>
+<tr><td>Hopper</td><td>SM90</td><td><code>wgmma</code> (warp group mma, async)</td><td>~3.9 PFLOPS</td></tr>
+<tr><td>Blackwell</td><td>SM100/120</td><td><code>tcgen05.mma</code> (FP4, FP8 blockwise)</td><td>~14 PFLOPS (FP4)</td></tr>
+</table>
+<h3>7.3 CUTLASS Tile 层次结构</h3>
+<p>CUTLASS 将 GEMM 分为四级并行层次，每级对应不同的内存域：</p>
+<div class="svg-wrap">
+<svg viewBox="0 0 600 370" width="600" height="370">
+<rect width="600" height="370" fill="var(--bg-card)" rx="8"/>
+<text x="300" y="20" text-anchor="middle" fill="var(--text-primary)" font-size="13" font-weight="600" font-family="Inter">GEMM Tile 层次：Grid → CTA → Warp → Thread</text>
+<!-- Grid -->
+<rect x="8" y="30" width="584" height="300" rx="8" fill="rgba(240,136,62,.05)" stroke="var(--accent-orange)" stroke-width="2"/>
+<text x="18" y="50" fill="var(--accent-orange)" font-size="11" font-weight="600" font-family="Inter">Grid  ← HBM (全局内存)</text>
+<!-- CTAs row1 -->
+<rect x="18" y="58" width="130" height="88" rx="5" fill="rgba(74,158,255,.12)" stroke="var(--accent-blue)"/>
+<text x="83" y="74" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter" font-weight="600">CTA [0,0]  ← SRAM</text>
+<!-- Warps inside CTA[0,0] -->
+<rect x="22" y="80" width="57" height="30" rx="3" fill="rgba(86,211,100,.35)" stroke="var(--accent-green)" stroke-width="1"/>
+<text x="50" y="98" text-anchor="middle" fill="var(--accent-green)" font-size="8" font-family="Inter">Warp 0</text>
+<!-- Thread dots in Warp 0 -->
+<circle cx="26" cy="85" r="2" fill="var(--accent-purple)"/><circle cx="32" cy="85" r="2" fill="var(--accent-purple)"/><circle cx="38" cy="85" r="2" fill="var(--accent-purple)"/><circle cx="44" cy="85" r="2" fill="var(--accent-purple)"/>
+<circle cx="26" cy="92" r="2" fill="var(--accent-purple)"/><circle cx="32" cy="92" r="2" fill="var(--accent-purple)"/><circle cx="38" cy="92" r="2" fill="var(--accent-purple)"/><circle cx="44" cy="92" r="2" fill="var(--accent-purple)"/>
+<text x="50" y="110" text-anchor="middle" fill="var(--accent-purple)" font-size="7" font-family="Inter">←reg</text>
+<rect x="83" y="80" width="57" height="30" rx="3" fill="rgba(86,211,100,.25)" stroke="var(--accent-green)" stroke-width="1"/>
+<text x="111" y="98" text-anchor="middle" fill="var(--accent-green)" font-size="8" font-family="Inter">Warp 1</text>
+<rect x="22" y="114" width="57" height="24" rx="3" fill="rgba(86,211,100,.2)" stroke="var(--accent-green)" stroke-width="1"/>
+<text x="50" y="130" text-anchor="middle" fill="var(--accent-green)" font-size="8" font-family="Inter">Warp 2</text>
+<rect x="83" y="114" width="57" height="24" rx="3" fill="rgba(86,211,100,.15)" stroke="var(--accent-green)" stroke-width="1"/>
+<text x="111" y="130" text-anchor="middle" fill="var(--accent-green)" font-size="8" font-family="Inter">Warp 3</text>
+<!-- More CTAs -->
+<rect x="158" y="58" width="130" height="88" rx="5" fill="rgba(74,158,255,.1)" stroke="var(--accent-blue)"/>
+<text x="223" y="74" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">CTA [0,1]</text>
+<rect x="298" y="58" width="130" height="88" rx="5" fill="rgba(74,158,255,.08)" stroke="var(--accent-blue)"/>
+<text x="363" y="74" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">CTA [0,2]</text>
+<rect x="438" y="58" width="145" height="88" rx="5" fill="rgba(74,158,255,.06)" stroke="var(--accent-blue)"/>
+<text x="510" y="74" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">CTA [0,3] ...</text>
+<!-- Row 2 CTAs -->
+<rect x="18" y="154" width="130" height="88" rx="5" fill="rgba(74,158,255,.1)" stroke="var(--accent-blue)"/>
+<text x="83" y="170" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">CTA [1,0]</text>
+<rect x="158" y="154" width="130" height="88" rx="5" fill="rgba(74,158,255,.08)" stroke="var(--accent-blue)"/>
+<rect x="298" y="154" width="130" height="88" rx="5" fill="rgba(74,158,255,.06)" stroke="var(--accent-blue)"/>
+<rect x="438" y="154" width="145" height="88" rx="5" fill="rgba(74,158,255,.04)" stroke="var(--accent-blue)"/>
+<!-- Row 3 -->
+<rect x="18" y="250" width="130" height="70" rx="5" fill="rgba(74,158,255,.08)" stroke="var(--accent-blue)"/>
+<text x="83" y="266" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">CTA [2,0] ...</text>
+<rect x="158" y="250" width="130" height="70" rx="5" fill="rgba(74,158,255,.06)" stroke="var(--accent-blue)"/>
+<rect x="298" y="250" width="130" height="70" rx="5" fill="rgba(74,158,255,.05)" stroke="var(--accent-blue)"/>
+<rect x="438" y="250" width="145" height="70" rx="5" fill="rgba(74,158,255,.03)" stroke="var(--accent-blue)"/>
+<!-- Legend -->
+<rect x="20" y="338" width="12" height="10" fill="rgba(240,136,62,.3)" stroke="var(--accent-orange)"/>
+<text x="36" y="347" fill="var(--accent-orange)" font-size="9" font-family="Inter">Grid (HBM)</text>
+<rect x="110" y="338" width="12" height="10" fill="rgba(74,158,255,.3)" stroke="var(--accent-blue)"/>
+<text x="126" y="347" fill="var(--accent-blue)" font-size="9" font-family="Inter">CTA (SRAM)</text>
+<rect x="210" y="338" width="12" height="10" fill="rgba(86,211,100,.4)" stroke="var(--accent-green)"/>
+<text x="226" y="347" fill="var(--accent-green)" font-size="9" font-family="Inter">Warp tile</text>
+<circle cx="316" cy="343" r="4" fill="var(--accent-purple)"/>
+<text x="324" y="347" fill="var(--accent-purple)" font-size="9" font-family="Inter">Thread (register frag)</text>
+<text x="300" y="362" text-anchor="middle" fill="var(--text-secondary)" font-size="9" font-family="Inter">TileShape_MNK: CTA tile; ClusterShape: SM cluster (Hopper+); each CTA = 4 warps = 128 threads</text>
+</svg>
+</div>
+<div class="anim-box">
+<h4>动画 A4：GEMM SRAM 双缓冲流水</h4>
+<svg id="svg-gemm" viewBox="0 0 680 300" width="100%" height="auto" style="max-width:680px">
+<rect width="680" height="300" fill="var(--bg-code)" rx="8"/>
+<!-- HBM zone labels -->
+<text x="170" y="20" text-anchor="middle" fill="var(--text-secondary)" font-size="11" font-family="Inter" font-weight="600">HBM</text>
+<text x="520" y="20" text-anchor="middle" fill="var(--text-secondary)" font-size="11" font-family="Inter" font-weight="600">SRAM（CTA 片上）</text>
+<!-- A matrix HBM -->
+<rect x="10" y="28" width="90" height="220" rx="4" fill="rgba(74,158,255,.15)" stroke="var(--accent-blue)"/>
+<text x="55" y="142" text-anchor="middle" fill="var(--accent-blue)" font-size="16" font-weight="700" font-family="Inter">A</text>
+<text x="55" y="160" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter">M×K</text>
+<!-- A tile 0 highlight -->
+<rect id="gem-a0" x="10" y="28" width="90" height="50" rx="4" fill="rgba(74,158,255,.6)" stroke="var(--accent-blue)" stroke-width="2" opacity="0"/>
+<!-- A tile 1 highlight -->
+<rect id="gem-a1" x="10" y="82" width="90" height="50" rx="4" fill="rgba(74,158,255,.4)" stroke="var(--accent-blue)" stroke-width="2" opacity="0"/>
+<!-- B matrix HBM -->
+<rect x="115" y="28" width="220" height="70" rx="4" fill="rgba(86,211,100,.15)" stroke="var(--accent-green)"/>
+<text x="225" y="68" text-anchor="middle" fill="var(--accent-green)" font-size="16" font-weight="700" font-family="Inter">B</text>
+<text x="225" y="86" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter">K×N</text>
+<!-- B tile 0 -->
+<rect id="gem-b0" x="115" y="28" width="60" height="70" rx="4" fill="rgba(86,211,100,.6)" stroke="var(--accent-green)" stroke-width="2" opacity="0"/>
+<!-- B tile 1 -->
+<rect id="gem-b1" x="179" y="28" width="60" height="70" rx="4" fill="rgba(86,211,100,.4)" stroke="var(--accent-green)" stroke-width="2" opacity="0"/>
+<!-- C output HBM -->
+<rect x="115" y="120" width="220" height="130" rx="4" fill="rgba(188,140,255,.1)" stroke="var(--accent-purple)" stroke-dasharray="5,3"/>
+<text x="225" y="190" text-anchor="middle" fill="var(--accent-purple)" font-size="16" font-weight="700" font-family="Inter">C</text>
+<text x="225" y="208" text-anchor="middle" fill="var(--accent-purple)" font-size="9" font-family="Inter">M×N（输出）</text>
+<!-- SRAM zone -->
+<rect x="355" y="28" width="316" height="250" rx="6" fill="rgba(86,211,100,.03)" stroke="var(--accent-green)" stroke-dasharray="5,3"/>
+<!-- SRAM A tile buffer 0 -->
+<rect id="sram-a0" x="365" y="38" width="70" height="90" rx="4" fill="rgba(74,158,255,.1)" stroke="var(--accent-blue)" stroke-dasharray="4,3"/>
+<text x="400" y="88" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter" opacity="0.5">A_tile[0]</text>
+<rect id="sram-a0-fill" x="365" y="38" width="70" height="90" rx="4" fill="rgba(74,158,255,.5)" stroke="var(--accent-blue)" stroke-width="2" opacity="0"/>
+<!-- SRAM A tile buffer 1 -->
+<rect id="sram-a1" x="365" y="138" width="70" height="90" rx="4" fill="rgba(74,158,255,.1)" stroke="var(--accent-blue)" stroke-dasharray="4,3"/>
+<text x="400" y="188" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter" opacity="0.5">A_tile[1]</text>
+<rect id="sram-a1-fill" x="365" y="138" width="70" height="90" rx="4" fill="rgba(74,158,255,.4)" stroke="var(--accent-blue)" stroke-width="2" opacity="0"/>
+<!-- SRAM B tile -->
+<rect id="sram-b0" x="445" y="38" width="100" height="40" rx="4" fill="rgba(86,211,100,.1)" stroke="var(--accent-green)" stroke-dasharray="4,3"/>
+<text x="495" y="63" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter" opacity="0.5">B_tile[0]</text>
+<rect id="sram-b0-fill" x="445" y="38" width="100" height="40" rx="4" fill="rgba(86,211,100,.5)" stroke="var(--accent-green)" stroke-width="2" opacity="0"/>
+<rect id="sram-b1" x="445" y="88" width="100" height="40" rx="4" fill="rgba(86,211,100,.1)" stroke="var(--accent-green)" stroke-dasharray="4,3"/>
+<text x="495" y="113" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter" opacity="0.5">B_tile[1]</text>
+<rect id="sram-b1-fill" x="445" y="88" width="100" height="40" rx="4" fill="rgba(86,211,100,.4)" stroke="var(--accent-green)" stroke-width="2" opacity="0"/>
+<!-- TC unit -->
+<rect id="sram-tc" x="555" y="38" width="108" height="90" rx="4" fill="rgba(188,140,255,.1)" stroke="var(--accent-purple)" stroke-dasharray="4,3"/>
+<text x="609" y="82" text-anchor="middle" fill="var(--accent-purple)" font-size="10" font-family="Inter" opacity="0.5">TC Regs</text>
+<text x="609" y="96" text-anchor="middle" fill="var(--accent-purple)" font-size="9" font-family="Inter" opacity="0.5">C_reg</text>
+<rect id="sram-tc-fill" x="555" y="38" width="108" height="90" rx="4" fill="rgba(188,140,255,.45)" stroke="var(--accent-purple)" stroke-width="2" opacity="0"/>
+<!-- mma label -->
+<text id="gem-mma-lbl" x="500" y="160" text-anchor="middle" fill="var(--accent-yellow)" font-size="11" font-weight="600" font-family="Inter" opacity="0">mma.sync ×</text>
+<!-- async arrows -->
+<line id="gem-arr-a" x1="100" y1="53" x2="362" y2="83" stroke="var(--accent-blue)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0" marker-end="url(#arr-bl)"/>
+<line id="gem-arr-b" x1="175" y1="63" x2="442" y2="58" stroke="var(--accent-green)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0" marker-end="url(#arr-gl)"/>
+<line id="gem-arr-store" x1="555" y1="83" x2="335" y2="175" stroke="var(--accent-purple)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0" marker-end="url(#arr-pl)"/>
+<defs>
+  <marker id="arr-bl" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--accent-blue)"/></marker>
+  <marker id="arr-gl" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--accent-green)"/></marker>
+  <marker id="arr-pl" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="var(--accent-purple)"/></marker>
+</defs>
+</svg>
+<div id="gemm-anim-controls"></div>
+</div>
+</section>
+
+<!-- ═══ SECTION 8: CUTLASS W8A8 ═══ -->
+<section id="sec-cutlass-w8a8">
+<h2>8. CUTLASS W8A8 Scaled MM <span class="badge badge-t1">Tier 1</span></h2>
+<div class="card tier1-card">
+<p><strong>入口文件</strong>：<span class="filepath">csrc/libtorch_stable/quantization/w8a8/cutlass/scaled_mm_entry.cu</span></p>
+<p><strong>SM 变体</strong>：sm75、sm80、sm89、sm90_fp8、sm100_fp8、sm100_blockwise_fp8、sm120_fp8</p>
+</div>
+<h3>8.1 量化 GEMM 数学</h3>
+<div class="formula-box">$$C = \text{dequant}(A_{q} \cdot B_{q}) \cdot s_A \cdot s_B + \text{bias}$$</div>
+<p>支持两种 scale 粒度：</p>
+<ul style="margin:.5rem 0 .5rem 1.5rem;line-height:2">
+<li><strong>Per-tensor</strong>：$A$ 和 $B$ 各一个全局 scale，计算最快</li>
+<li><strong>Blockwise（MXFP8）</strong>：每 block 共享一个 scale，精度更高：$\hat{x}_i = \text{fp8\_decode}(q_i) \cdot s_{b(i)}$</li>
+</ul>
+<h3>8.2 SM 版本分发链</h3>
+<pre><code class="language-cpp">// scaled_mm_entry.cu - SM 版本自动选择
+void cutlass_scaled_mm(torch::Tensor&amp; out, const torch::Tensor&amp; a,
+                       const torch::Tensor&amp; b,
+                       const torch::Tensor&amp; scale_a,
+                       const torch::Tensor&amp; scale_b,
+                       const std::optional&lt;torch::Tensor&gt;&amp; bias) {
+  int sm = at::cuda::getCurrentDeviceProperties()-&gt;major * 10
+         + at::cuda::getCurrentDeviceProperties()-&gt;minor;
+  if      (sm &gt;= 120) cutlass_scaled_mm_sm120(out, a, b, scale_a, scale_b, bias);
+  else if (sm &gt;= 100) cutlass_scaled_mm_sm100(out, a, b, scale_a, scale_b, bias);
+  else if (sm &gt;= 90)  cutlass_scaled_mm_sm90 (out, a, b, scale_a, scale_b, bias);
+  else if (sm &gt;= 89)  cutlass_scaled_mm_sm89 (out, a, b, scale_a, scale_b, bias);
+  else if (sm &gt;= 80)  cutlass_scaled_mm_sm80 (out, a, b, scale_a, scale_b, bias);
+  else                cutlass_scaled_mm_sm75 (out, a, b, scale_a, scale_b, bias);
+}</code></pre>
+<h3>8.3 Python 后端适配层</h3>
+<p>来源：<span class="filepath">vllm/model_executor/kernels/linear/scaled_mm/cutlass.py</span></p>
+<pre><code class="language-python">class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
+    """W8A8 CUTLASS GEMM 后端，对接 vLLM linear layer"""
+    def apply(self, x: torch.Tensor, weight: torch.Tensor,
+              scale_x: torch.Tensor, scale_w: torch.Tensor,
+              bias: Optional[torch.Tensor]) -> torch.Tensor:
+        return ops.cutlass_scaled_mm(x, weight, scale_x, scale_w, bias)</code></pre>
+</section>
+
+<!-- ═══ SECTION 9: CUTLASS W4A8 ═══ -->
+<section id="sec-cutlass-w4a8">
+<h2>9. CUTLASS W4A8 <span class="badge badge-t2">Tier 2</span></h2>
+<div class="card tier2-card">
+<p><strong>单 MM</strong>：<span class="filepath">csrc/libtorch_stable/quantization/cutlass_w4a8/w4a8_mm_entry.cu</span>（19KB）</p>
+<p><strong>MoE 分组 MM</strong>：<span class="filepath">csrc/libtorch_stable/quantization/cutlass_w4a8/w4a8_grouped_mm_entry.cu</span>（23KB）</p>
+</div>
+<p>W4A8 是 vLLM 支持的最具挑战性的混合精度格式：权重 INT4（4 位），激活 FP8（8 位），输出 FP16/BF16。</p>
+<h3>9.1 执行流程</h3>
+<ol style="margin:.5rem 0 .5rem 1.5rem;line-height:2.2">
+<li><strong>解包</strong>：INT4 packed 权重（每字节存两个 INT4 值）解包为临时 INT8 格式</li>
+<li><strong>Tensor Core</strong>：以 FP8 精度执行 <code>mma</code> 指令（INT4→FP8 转换在片上完成）</li>
+<li><strong>Epilogue</strong>：应用 per-column（per-output-channel）scale 反量化，输出 BF16/FP16</li>
+</ol>
+<div class="formula-box">$$C_{f16} = \text{epilogue}(A_{fp8} \cdot \text{unpack}(B_{int4})) \cdot s_A \cdot s_{B,\text{per-col}}$$</div>
+<h3>9.2 MoE 分组 MM</h3>
+<p><code>w4a8_grouped_mm_entry.cu</code> 支持每个专家独立的问题规模（Grouped GEMM），每个专家的 K/N/scale 可以不同，通过 CUTLASS 的 Grouped GEMM 实现高效并行。</p>
+</section>
+
+<!-- ═══ SECTION 10: FP4/NVFP4 ═══ -->
+<section id="sec-fp4">
+<h2>10. FP4/NVFP4 GEMM <span class="badge badge-t2">Tier 2</span></h2>
+<div class="card tier2-card">
+<p><strong>核心文件</strong>：<span class="filepath">csrc/libtorch_stable/quantization/fp4/nvfp4_scaled_mm_kernels.cu</span>（14KB）、<span class="filepath">nvfp4_scaled_mm_sm120_kernels.cu</span>（13KB）</p>
+</div>
+<h3>10.1 NVFP4 格式规范</h3>
+<p>NVIDIA FP4（E2M1 格式）：1 位符号 + 2 位指数 + 1 位尾数，共 4 位。可表示的非零值集合：</p>
+<div class="formula-box">$$\{±0.5, ±1, ±1.5, ±2, ±3, ±4, ±6\} \cup \{0\}$$</div>
+<p>单独使用 FP4 表示范围太窄，因此每 16 个 FP4 元素共享一个 <strong>FP8 E4M3 缩放因子</strong>（blockwise）：</p>
+<div class="formula-box">$$\hat{x}_i = \text{fp4\_decode}(q_i) \cdot \text{fp8\_decode}(s_{b(i)}), \quad b(i) = \lfloor i/16 \rfloor$$</div>
+<p>这等价于 OCP MX 标准中的 MXFP4，但 NVIDIA 实现有硬件特定优化。</p>
+<h3>10.2 Blackwell SM120 FP4 Tensor Core</h3>
+<p>Blackwell B200（SM120）引入专用 FP4 Tensor Core 指令，理论峰值吞吐约为 FP8 的 2 倍（~14 PFLOPS vs ~7 PFLOPS FP8）。<code>nvfp4_scaled_mm_sm120_kernels.cu</code> 专门针对 SM120 优化，使用新的 <code>tcgen05.mma</code> 指令族。</p>
+<h3>10.3 NVFP4 量化入口</h3>
+<pre><code class="language-python"># vllm/model_executor/kernels/linear/scaled_mm/ 的 FP4 路径
+# 检测到 SM120 时，自动选择 nvfp4_scaled_mm_sm120 kernel
+# 权重需在模型加载时预先量化到 NVFP4 格式
+# 量化：nvfp4_quant_entry.cu 提供 tensor → NVFP4 的转换</code></pre>
+</section>
+
+<!-- ═══ SECTION 11: CuTeDSL ═══ -->
+<section id="sec-cute">
+<h2>11. CuTeDSL 与 CUTLASS 3.x 张量抽象 <span class="badge badge-t2">Tier 2</span></h2>
+<div class="card tier2-card">
+<p>CuTe（<strong>CU</strong>TLASS <strong>T</strong>ensor <strong>E</strong>xtension）是 CUTLASS 3.x 引入的张量描述语言，用于精确且可组合地表达 CUDA Kernel 中的 tile 形状、步长和数据访问模式。</p>
+</div>
+<h3>11.1 Shape 与 Stride 抽象</h3>
+<p>CuTe 使用嵌套元组（hierarchical tuples）描述多维张量，编译期常量用 <code>_N</code> 表示：</p>
+<pre><code class="language-cpp">// 来自 sm100_cutlass_mla_kernel.cu
+// Tile: (H=128 heads, N=128 KV-seq, D=(512 latent, 64 rope))
+using TileShape = Shape&lt;_128, _128, Shape&lt;_512, _64&gt;&gt;;
+
+// Stride: (H_stride, D_stride=1_contiguous, B_stride)
+using StrideQ = cute::tuple&lt;int64_t, _1, int64_t&gt;;  // H D B
+
+// 访问 Q[h, d, b]：
+// offset = h * stride_H + d * 1 + b * stride_B
+</code></pre>
+<h3>11.2 TMA（Tensor Memory Accelerator）</h3>
+<p>Hopper（SM90）引入的 TMA 硬件单元可以异步地将多维张量从 HBM 批量拷贝到 SRAM，不消耗线程计算资源。CUTLASS 3.x 通过 <code>TmaWarpspecialized</code> kernel 模板封装 TMA，实现计算与内存访问的完全流水线化：</p>
+<pre><code class="language-cpp">// CUTLASS 3.x TMA warpspecialized kernel 结构示意
+// Warp 0: 专门做 TMA 加载（consumer）
+// Warp 1-3: 专门做 TC 计算（producer）
+// 通过 __pipeline_wait_prior / arrive_and_wait 同步
+using FmhaKernel = Sm100FmhaMlaKernelTmaWarpspecialized&lt;...&gt;;</code></pre>
+<h3>11.3 CuTeDSL：Python 端 DSL</h3>
+<p>CuTeDSL 是 CuTe 的 Python 绑定，允许在 Python 中用 CuTe 语法描述 Kernel，通过 MLIR 编译到高效 CUDA 代码。vLLM 的部分自定义 Kernel 开始采用此方式开发。</p>
+</section>
+
+<!-- ═══ SECTION 12: MARLIN ═══ -->
+<section id="sec-marlin">
+<h2>12. Marlin W4A16 GEMM <span class="badge badge-t1">Tier 1</span></h2>
+<div class="card tier1-card">
+<p><strong>核心文件</strong>：<span class="filepath">csrc/quantization/marlin/marlin.cu</span>、<span class="filepath">marlin_mma.h</span>、<span class="filepath">marlin_template.h</span></p>
+<p><strong>支持</strong>：AWQ、GPTQ 量化权重，W4A16/W8A16，split-K</p>
+</div>
+<h3>12.1 数学模型</h3>
+<p>权重以 INT4 packed 格式存储，激活为 FP16/BF16，矩阵乘时即时反量化：</p>
+<div class="formula-box">$$y = \hat{W} x, \quad \hat{W}_{ij} = s_{g(i,j)} \cdot \left(q_{ij} - z_{g(i,j)}\right)$$</div>
+<p>其中 $g(i,j)$ 为 group 索引，$s$ 为 scale，$z$ 为 zero-point。group size 通常为 128。</p>
+<h3>12.2 Kernel 模板参数</h3>
+<pre><code class="language-cpp">// csrc/quantization/marlin/kernel.h
+template &lt;
+  const vllm::ScalarTypeId b_type_id,   // 权重类型（int4, fp8等）
+  const int threads,           // threads/block，典型值 256
+  const int thread_m_blocks,   // M 方向 16×16 tile 数
+  const int thread_n_blocks,   // N 方向 tile 数
+  const int thread_k_blocks,   // K 方向 tile 数（内循环）
+  const int stages,            // 异步流水级数（double buffer=2）
+  const int group_blocks       // 量化 group 对应的连续 tile 数
+&gt;
+__global__ void Marlin(/* 参数 */);</code></pre>
+<h3>12.3 PTX MMA 指令（精确三版本）</h3>
+<p>来源：<span class="filepath">csrc/quantization/marlin/marlin_mma.h</span></p>
+<pre><code class="language-cpp">// ── SM75 Turing：两条 m16n8k8 完成 k=16 ──
+#if __CUDA_ARCH__ == 750
+  asm volatile(
+      "mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 "
+      "{%0,%1,%2,%3}, {%4,%5}, {%6}, {%7,%8,%9,%10};\n"
+      : "=f"(c[0]),"=f"(c[1]),"=f"(c[2]),"=f"(c[3])
+      : "r"(a[0]),"r"(a[1]),"r"(b[0]),"f"(c[0]),"f"(c[1]),"f"(c[2]),"f"(c[3]));
+  // 第二次：a[2],a[3],b[1]
+  asm volatile(/* 相同格式，使用 a[2],a[3],b[1] */);
+
+// ── SM80+ Ampere：单条 m16n8k16 ──
+#else
+  asm volatile(
+      "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
+      "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%10,%11,%12,%13};\n"
+      : "=f"(c[0]),"=f"(c[1]),"=f"(c[2]),"=f"(c[3])
+      : "r"(a[0]),"r"(a[1]),"r"(a[2]),"r"(a[3]),
+        "r"(b[0]),"r"(b[1]),
+        "f"(c[0]),"f"(c[1]),"f"(c[2]),"f"(c[3]));
+#endif
+
+// ── BF16 路径（SM80+）──
+  asm volatile(
+      "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
+      "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%10,%11,%12,%13};\n" /* ... */);
+
+// ── FP8 E4M3 路径（SM89+ Ada）──
+  asm volatile(
+      "mma.sync.aligned.m16n8k16.row.col.f32.e4m3.e4m3.f32 "
+      "{%0,%1,%2,%3}, {%4,%5}, {%6}, {%7,%8,%9,%10};\n" /* ... */);</code></pre>
+<h3>12.4 Split-K 并行归约</h3>
+<p>对 M 很小（Decode 阶段常见）的情况，沿 K 维并行以提高 GPU 利用率：</p>
+<div class="formula-box">$$y[m,n] = \sum_{s=0}^{S-1} \sum_{k \in \text{slice}_s} \hat{W}[k,n] \cdot x[m,k]$$</div>
+<p>输出形状 <code>[split_k_iters, M, N]</code>，后归约为 <code>[M, N]</code>。</p>
+<h3>12.5 列置换与权重重打包</h3>
+<p><strong>列置换</strong>（<code>permute_cols_kernel</code>）：离线预处理，将权重列重排以对齐 <code>ldmatrix</code> 的访问模式，消除 shared memory bank conflict。</p>
+<p><strong>权重重打包</strong>：</p>
+<ul style="margin:.5rem 0 .5rem 1.5rem;line-height:2">
+<li><code>awq_marlin_repack.cu</code>：将 AWQ 量化格式（按列分组）转换为 Marlin interleaved 布局</li>
+<li><code>gptq_marlin_repack.cu</code>：将 GPTQ 格式（行主序 INT4 packed）转换为 Marlin 布局</li>
+</ul>
+<p>Marlin interleaved 布局的核心思想：使每个 warp 的 32 个线程在执行 <code>ldmatrix</code> 时访问的权重元素恰好分布在不同的 bank，实现零 bank conflict 的权重加载。</p>
+<h3>12.6 Python 路径</h3>
+<pre><code class="language-python"># vllm/model_executor/kernels/linear/scaled_mm/marlin.py
+class MarlinLinearKernel(ScaledMMLinearKernel):
+    def apply(self, x, qweight, scales, zeros, workspace, ...):
+        return ops.gptq_marlin_gemm(x, qweight, scales, zeros,
+                                    g_idx, perm, workspace,
+                                    num_bits=4, is_k_full=True)</code></pre>
+</section>
+
+<!-- ═══ SECTION 13: MoE ═══ -->
+<section id="sec-moe">
+<h2>13. MoE 路由 Kernels <span class="badge badge-t1">Tier 1</span></h2>
+<div class="card tier1-card">
+<p><strong>核心文件</strong>：<span class="filepath">csrc/moe/topk_softmax_kernels.cu</span>（36KB）、<span class="filepath">csrc/moe/grouped_topk_kernels.cu</span>（43KB）、<span class="filepath">csrc/moe/moe_permute_unpermute_op.cu</span>（8.8KB）、<span class="filepath">csrc/moe/moe_align_sum_kernels.cu</span>（30KB）</p>
+</div>
+<h3>13.1 MoE 路由数学</h3>
+<p>给定 token 特征 $x$，router 产生 logits 并选择 Top-K 专家：</p>
+<div class="formula-box">$$r = x W_{\text{router}} \in \mathbb{R}^{n_{\text{experts}}}$$
+$$\text{expert\_ids} = \text{TopK}\!\left(\text{softmax}(r),\; k\right)$$
+$$g_i = \frac{e^{r_i}}{\sum_{j \in \text{TopK}} e^{r_j}} \quad \text{（归一化门控权重）}$$</div>
+<p>部分模型（如 DeepSeek-V3）使用 sigmoid 替代 softmax：</p>
+<div class="formula-box">$$g_i = \frac{\sigma(r_i)}{\sum_{j \in \text{TopK}} \sigma(r_j)}$$</div>
+<h3>13.2 TopK Softmax Kernel</h3>
+<pre><code class="language-cpp">// csrc/moe/topk_softmax_kernels.cu
+enum class ScoringFunc { SCORING_SOFTMAX = 0, SCORING_SIGMOID = 1 };
+
+template &lt;int TPB, typename InputType&gt;
+__launch_bounds__(TPB) __global__
+void moeSoftmax(const InputType* input, const bool* finished,
+                float* output, const int num_cols) {
+  // 每个 block 处理一个 token 的所有 expert logits
+  using BlockReduce = cub::BlockReduce&lt;float, TPB&gt;;
+  __shared__ typename BlockReduce::TempStorage temp_storage;
+
+  float local_max = -FLT_MAX;
+  // Step 1: 找最大 logit（数值稳定性）
+  for (int i = threadIdx.x; i &lt; num_cols; i += TPB)
+    if (!finished || !finished[blockIdx.x])
+      local_max = fmaxf(local_max, (float)input[blockIdx.x * num_cols + i]);
+  float global_max = BlockReduce(temp_storage).Reduce(local_max, cub::Max());
+
+  __syncthreads();
+  // Step 2: 计算 exp(logit - max)，求和后归一化
+  float local_sum = 0.f;
+  for (int i = threadIdx.x; i &lt; num_cols; i += TPB)
+    local_sum += expf((float)input[blockIdx.x * num_cols + i] - global_max);
+  float global_sum = BlockReduce(temp_storage).Sum(local_sum);
+  // Step 3: 写入归一化 softmax 输出
+}</code></pre>
+<p><code>grouped_topk_kernels.cu</code>（43KB）：先在各 group 内选 TopK，再全局选 TopK，用于 DeepSeek 等使用 grouped topk 路由的模型。</p>
+<h3>13.3 Permute/Unpermute Kernel</h3>
+<pre><code class="language-cpp">// moe_permute_unpermute_op.cu
+// 输出：
+//   permuted_input: [permuted_size, hidden]  按专家排序的 token
+//   expert_first_token_offset: [n_local_expert+1]  CSR 格式偏移
+void moe_permute(
+    const torch::Tensor&amp; input,     // [n_token, hidden]
+    const torch::Tensor&amp; topk_ids,  // [n_token, topk]
+    // ...
+    torch::Tensor&amp; permuted_input,
+    torch::Tensor&amp; expert_first_token_offset);</code></pre>
+<p>Expert Parallelism 下，<code>expert_map</code> 将全局 expert id 映射到当前 EP rank 的局部 expert id，不属于本 rank 的 token 被过滤掉，降低通信量。</p>
+<h3>13.4 Align Sum Kernel</h3>
+<p><code>moe_align_sum_kernels.cu</code> 计算每个专家分配到的 token 数，并对齐到 CUDA threadblock 边界（确保 GEMM 输入形状合法，避免边界越界）。输出 <code>expert_first_token_offset</code> 和 <code>num_tokens_post_padded</code>。</p>
+<div class="anim-box">
+<h4>动画 A5：MoE 路由全流程（Top-2）</h4>
+<svg id="svg-moe" viewBox="0 0 700 300" width="100%" height="auto" style="max-width:700px">
+<rect width="700" height="300" fill="var(--bg-code)" rx="8"/>
+<!-- Tokens -->
+<rect id="mt0" x="10" y="50" width="65" height="20" rx="3" fill="rgba(74,158,255,.7)"/><text x="42" y="64" text-anchor="middle" fill="white" font-size="9" font-family="Inter">Token 0</text>
+<rect id="mt1" x="10" y="76" width="65" height="20" rx="3" fill="rgba(74,158,255,.6)"/><text x="42" y="90" text-anchor="middle" fill="white" font-size="9" font-family="Inter">Token 1</text>
+<rect id="mt2" x="10" y="102" width="65" height="20" rx="3" fill="rgba(74,158,255,.5)"/><text x="42" y="116" text-anchor="middle" fill="white" font-size="9" font-family="Inter">Token 2</text>
+<rect id="mt3" x="10" y="128" width="65" height="20" rx="3" fill="rgba(74,158,255,.4)"/><text x="42" y="142" text-anchor="middle" fill="white" font-size="9" font-family="Inter">Token 3</text>
+<!-- full-connect lines (router) -->
+<line id="moe-lines" x1="75" y1="100" x2="112" y2="100" stroke="var(--border)" stroke-width="0.8" opacity="0"/>
+<!-- Router box -->
+<rect id="moe-router" x="112" y="50" width="85" height="110" rx="6" fill="rgba(240,136,62,.12)" stroke="var(--accent-orange)" opacity="0"/>
+<text id="moe-router-t" x="154" y="100" text-anchor="middle" fill="var(--accent-orange)" font-size="10" font-weight="600" font-family="Inter" opacity="0">Router</text>
+<text id="moe-router-t2" x="154" y="115" text-anchor="middle" fill="var(--accent-orange)" font-size="9" font-family="Inter" opacity="0">W_router</text>
+<text id="moe-router-t3" x="154" y="130" text-anchor="middle" fill="var(--accent-orange)" font-size="9" font-family="Inter" opacity="0">TopK Softmax</text>
+<!-- TopK highlights -->
+<circle id="moe-k1" cx="217" cy="70" r="7" fill="var(--accent-green)" opacity="0"/><circle id="moe-k2" cx="240" cy="85" r="7" fill="var(--accent-green)" opacity="0"/>
+<circle id="moe-k3" cx="217" cy="100" r="7" fill="var(--accent-yellow)" opacity="0"/><circle id="moe-k4" cx="240" cy="115" r="7" fill="var(--accent-yellow)" opacity="0"/>
+<!-- Permute box -->
+<rect id="moe-perm" x="270" y="50" width="70" height="110" rx="6" fill="rgba(227,179,65,.1)" stroke="var(--accent-yellow)" opacity="0"/>
+<text id="moe-perm-t" x="305" y="105" text-anchor="middle" fill="var(--accent-yellow)" font-size="10" font-weight="600" font-family="Inter" opacity="0">Permute</text>
+<text id="moe-perm-t2" x="305" y="120" text-anchor="middle" fill="var(--accent-yellow)" font-size="9" font-family="Inter" opacity="0">按专家排序</text>
+<!-- Expert boxes -->
+<rect id="moe-e0" x="360" y="40" width="80" height="45" rx="5" fill="rgba(86,211,100,.12)" stroke="var(--accent-green)" opacity="0"/>
+<text id="moe-e0-t" x="400" y="60" text-anchor="middle" fill="var(--accent-green)" font-size="10" font-weight="600" font-family="Inter" opacity="0">Expert 0</text>
+<text id="moe-e0-t2" x="400" y="75" text-anchor="middle" fill="var(--accent-green)" font-size="9" font-family="Inter" opacity="0">GEMM</text>
+<rect id="moe-e1" x="360" y="95" width="80" height="45" rx="5" fill="rgba(188,140,255,.12)" stroke="var(--accent-purple)" opacity="0"/>
+<text id="moe-e1-t" x="400" y="115" text-anchor="middle" fill="var(--accent-purple)" font-size="10" font-weight="600" font-family="Inter" opacity="0">Expert 1</text>
+<text id="moe-e1-t2" x="400" y="130" text-anchor="middle" fill="var(--accent-purple)" font-size="9" font-family="Inter" opacity="0">GEMM</text>
+<text id="moe-edots" x="400" y="158" text-anchor="middle" fill="var(--text-secondary)" font-size="12" font-family="Inter" opacity="0">⋯</text>
+<!-- Gate weights -->
+<rect id="moe-gate" x="460" y="50" width="60" height="110" rx="5" fill="rgba(255,119,114,.1)" stroke="var(--accent-red)" opacity="0"/>
+<text id="moe-gate-t" x="490" y="100" text-anchor="middle" fill="var(--accent-red)" font-size="10" font-weight="600" font-family="Inter" opacity="0">Gate</text>
+<text id="moe-gate-t2" x="490" y="115" text-anchor="middle" fill="var(--accent-red)" font-size="9" font-family="Inter" opacity="0">weights gᵢ</text>
+<!-- Unpermute -->
+<rect id="moe-unperm" x="540" y="50" width="75" height="110" rx="5" fill="rgba(74,158,255,.1)" stroke="var(--accent-blue)" opacity="0"/>
+<text id="moe-unperm-t" x="577" y="95" text-anchor="middle" fill="var(--accent-blue)" font-size="10" font-weight="600" font-family="Inter" opacity="0">Unpermute</text>
+<text id="moe-unperm-t2" x="577" y="110" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter" opacity="0">Σ gᵢ·Eᵢ(x)</text>
+<text id="moe-unperm-t3" x="577" y="125" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="Inter" opacity="0">原始顺序</text>
+<!-- formula -->
+<text x="350" y="245" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="Inter">output = Σᵢ gᵢ · Expert_i(x)，gᵢ = TopK-softmax(xW_router)ᵢ</text>
+<text x="350" y="263" text-anchor="middle" fill="var(--text-secondary)" font-size="9" font-family="Inter">来源：csrc/moe/topk_softmax_kernels.cu, moe_permute_unpermute_op.cu</text>
+</svg>
+<div id="moe-anim-controls"></div>
+</div>
+<h3>13.5 MoE GEMM 实现汇总</h3>
+<details>
+<summary><span class="badge badge-t3">Tier 3</span> MoE GEMM 全量实现列表（点击展开）</summary>
+<div class="inner">
+<table>
+<tr><th>实现</th><th>文件</th><th>精度</th><th>目标硬件</th><th>特点</th></tr>
+<tr><td>Marlin MoE</td><td><code>csrc/moe/moe_wna16.cu</code></td><td>W4A16</td><td>SM≥7.5</td><td>最广泛支持的量化 MoE GEMM</td></tr>
+<tr><td>CUTLASS MXFP8 MoE</td><td><code>csrc/moe/mxfp8_moe/cutlass_mxfp8_grouped_mm.cu</code></td><td>FP8 W/A</td><td>SM90</td><td>Grouped GEMM，专家并行</td></tr>
+<tr><td>DSV3 Router GEMM (BF16)</td><td><code>csrc/moe/dsv3_router_gemm_bf16_out.cu</code></td><td>BF16</td><td>SM≥8.0</td><td>DeepSeek-V3 路由专用</td></tr>
+<tr><td>DSV3 Router GEMM (float)</td><td><code>csrc/moe/dsv3_router_gemm_float_out.cu</code></td><td>float32</td><td>SM≥8.0</td><td>高精度路由</td></tr>
+<tr><td>W4A8 Grouped MM</td><td><code>csrc/.../cutlass_w4a8/w4a8_grouped_mm_entry.cu</code></td><td>W4A8</td><td>SM≥9.0</td><td>混合精度 MoE</td></tr>
+<tr><td>FP4 MoE 量化</td><td><code>csrc/.../fp4/nvfp4_experts_quant.cu</code></td><td>FP4</td><td>SM120</td><td>Blackwell 专用，吞吐最高</td></tr>
+<tr><td>MoE Align Sum</td><td><code>csrc/moe/moe_align_sum_kernels.cu</code></td><td>—</td><td>所有 SM</td><td>token 对齐计数，支持 GEMM</td></tr>
+</table>
+</div>
+</details>
+</section>
+
+<!-- ═══ SECTION 14: SELECTOR ═══ -->
+<section id="sec-selector">
+<h2>14. 后端选择完整决策树</h2>
+<p>vLLM 的后端选择逻辑在 <span class="filepath">vllm/v1/attention/selector.py</span> 中实现，综合以下因素做决策：</p>
+<table>
+<tr><th>因素</th><th>影响</th></tr>
+<tr><td><code>use_mla</code></td><td>进入 MLA 路径（FlashMLA / CUTLASS_MLA / FlashInfer_MLA / Triton_MLA）</td></tr>
+<tr><td>SM 版本</td><td>SM90+ 优先用 FlashMLA；SM100 可用 CUTLASS MLA</td></tr>
+<tr><td><code>kv_cache_dtype</code></td><td>fp8→FlashInfer（支持 FP8 KV）；fp4→FlashInfer（FP4Tensor）</td></tr>
+<tr><td><code>use_per_head_quant_scales</code></td><td>→ Triton（唯一支持 per-token-head scale 的后端）</td></tr>
+<tr><td><code>has_sink</code></td><td>→ 需要支持 sink attention 的后端（SM90+）</td></tr>
+<tr><td><code>use_sparse</code></td><td>→ FlashMLA_Sparse / FlashInfer_MLA_Sparse</td></tr>
+<tr><td>平台</td><td>AMD→ROCm_ATTN / ROCm_AIter；Intel→XPU；CPU→CPU_ATTN</td></tr>
+<tr><td><code>attn_type</code></td><td>encoder/decoder/cross-attn 不同路径</td></tr>
+</table>
+<pre><code class="language-python"># selector.py 关键逻辑（简化）
+def get_attn_backend(head_size, dtype, kv_cache_dtype,
+                     use_mla=False, has_sink=False, ...):
+    vllm_config = get_current_vllm_config()
+
+    # 1. 平台过滤（ROCm, XPU, CPU）
+    platform_backend = current_platform.get_attn_backend_cls(...)
+    if platform_backend is not None:
+        return platform_backend
+
+    attn_config = AttentionSelectorConfig(
+        head_size=head_size, dtype=dtype,
+        kv_cache_dtype=kv_cache_dtype,
+        use_mla=use_mla, has_sink=has_sink, ...
+    )
+    # 2. 通过配置的 backend 名称或自动选择
+    return _cached_get_attn_backend(
+        backend=vllm_config.attention_config.backend,
+        attn_selector_config=attn_config,
+    )
+</code></pre>
+<div class="info">ℹ <strong>提示</strong>：可以通过环境变量 <code>VLLM_ATTENTION_BACKEND=FLASH_ATTN</code>（或其他枚举名）强制覆盖后端选择，用于调试或性能对比。</div>
+</section>
+
+<!-- ═══ SECTION 15: ISSUES ═══ -->
+<section id="sec-issues">
+<h2>15. 当前已知 Issue</h2>
+<p>以下 Issue 来源于 vLLM 源码注释、vLLM GitHub issue tracker。使用以下命令可查询最新状态：</p>
+<pre><code class="language-bash"># 查询 kernel 相关 open issue
+gh issue list --repo vllm-project/vllm --label kernel --state open --limit 20
+
+# 查询 FlashAttention 相关
+gh issue list --repo vllm-project/vllm --search "flashattention kernel" --state open
+
+# 查询 MoE 内核问题
+gh issue list --repo vllm-project/vllm --search "MoE kernel permute" --state open
+
+# 查询 FlashMLA 问题
+gh issue list --repo vllm-project/vllm --search "flashmla" --state open --limit 20</code></pre>
+
+<div class="issue-card">
+<div class="issue-title">FlashAttention NaN 传播（混合模型）</div>
+<div class="issue-meta">来源：<code>flash_attn.py:91</code> 注释 | 参考：<a href="https://github.com/Dao-AILab/flash-attention/issues/1974">flash-attention#1974</a></div>
+<p>当 Mamba+Attention 混合模型使用 FP32 SSM cache（<code>mamba_ssm_cache_dtype="float32"</code>）时，FlashAttention 在某些 block size（如 128）下会产生 NaN。vLLM 临时限制这类模型的 block size 为 <code>[16, 32, 64]</code>。根本原因尚在 FlashAttention 上游调查中。</p>
+</div>
+
+<div class="issue-card">
+<div class="issue-title">CUTLASS MLA SM100 Kernel 要求 CUDA ≥ 12.4</div>
+<div class="issue-meta">来源：<code>csrc/attention/mla/sm100_cutlass_mla_kernel.cu:37-48</code></div>
+<p>Blackwell SM100 CUTLASS MLA Kernel 依赖 CUDA 12.4+ 的 TMA 和 warpspecialized 功能。CUDA &lt; 12.4 时 kernel 以 <code>TORCH_CHECK(false, ...)</code> 主动报错，不会静默失败。用户需确保 Blackwell GPU 配套 CUDA ≥ 12.4 的环境。</p>
+</div>
+
+<div class="issue-card">
+<div class="issue-title">FA2 vs FA3 CUDA Graph 兼容性差异</div>
+<div class="issue-meta">来源：<code>flash_attn.py</code> | 状态：进行中</div>
+<p>FlashAttention v3（FA3，针对 Hopper 优化）与 vLLM CUDAGraph 捕获的兼容性不完整。FA2 在 SM80+ 上 CUDA Graph 完全支持；FA3 在某些配置下 graph capture 失败或运行时输出异常。vLLM 在 SM90 上默认根据版本检测在两者间切换。</p>
+</div>
+
+<div class="issue-card">
+<div class="issue-title">Marlin Split-K 边界精度</div>
+<div class="issue-meta">来源：Marlin kernel | 状态：已知限制</div>
+<p>W4A16 Marlin kernel 在特定 M/N/K 维度组合（尤其 K 不能被 block_k × split_k 整除时）可能出现边界 token 精度退化。解决方案是通过 padding 使 K 对齐到 tile 大小的整数倍，vLLM 在权重加载时自动处理 padding。</p>
+</div>
+
+<div class="issue-card">
+<div class="issue-title">FP4 MoE Expert 量化：Blackwell 专属</div>
+<div class="issue-meta">来源：<code>csrc/.../fp4/nvfp4_experts_quant.cu</code> | 状态：SM120 限制</div>
+<p>NVFP4 MoE Expert 量化目前仅支持 SM120（Blackwell B200/B100），在 SM90 及以下硬件上无法使用 FP4 量化 MoE 专家权重。尝试在非 SM120 硬件上使用此功能会回退到 FP8 或 BF16 路径。</p>
+</div>
+
+<div class="issue-card closed">
+<div class="issue-title">FlashInfer workspace buffer 大小不足（已修复）</div>
+<div class="issue-meta">状态：已在 v0.13.x 修复</div>
+<p>早期版本 FlashInfer workspace buffer 默认大小不足，在极长序列或大 batch 下会触发 OOM 或 kernel 错误。后更新为 2GB 固定常量 <code>FLASHINFER_WORKSPACE_BUFFER_SIZE_BATCH_INVARIANT</code>，同时支持通过环境变量 <code>VLLM_FLASHINFER_WORKSPACE_BUFFER_SIZE</code> 覆盖。</p>
+</div>
+</section>
+
+</div><!-- end article part 1 -->
+</main>
+</div>
+
+<script>
+// ─── Animation State Machine ───
+class AnimationStateMachine {
+  constructor(svgId, frames) {
+    this.svgId = svgId;
+    this.frames = frames;
+    this.current = 0;
+    this.playing = false;
+    this.timer = null;
+    this.applyFrame(0);
+  }
+  applyFrame(idx) {
+    const f = this.frames[idx];
+    if (!f) return;
+    (f.show||[]).forEach(id => { const e=document.getElementById(id); if(e) e.style.opacity='1'; });
+    (f.hide||[]).forEach(id => { const e=document.getElementById(id); if(e) e.style.opacity='0'; });
+    (f.attrs||[]).forEach(({id,attr,val}) => { const e=document.getElementById(id); if(e) e.setAttribute(attr,val); });
+    (f.texts||[]).forEach(({id,text}) => { const e=document.getElementById(id); if(e) e.textContent=text; });
+    const lbl=document.getElementById(this.svgId+'-lbl'); if(lbl&&f.label) lbl.textContent=f.label;
+    const cnt=document.getElementById(this.svgId+'-cnt'); if(cnt) cnt.textContent=(idx+1)+'/'+this.frames.length;
+  }
+  play(ms=1600){
+    if(this.playing)return; this.playing=true;
+    const pb=document.getElementById(this.svgId+'-pb'); if(pb) pb.textContent='⏸ 暂停';
+    this.timer=setInterval(()=>{
+      if(this.current>=this.frames.length-1){this.pause();return;}
+      this.current++;this.applyFrame(this.current);
+    },ms);
+  }
+  pause(){ this.playing=false; clearInterval(this.timer); const pb=document.getElementById(this.svgId+'-pb'); if(pb) pb.textContent='▶ 播放'; }
+  reset(){ this.pause(); this.current=0; this.applyFrame(0); }
+  stepF(){ if(this.current<this.frames.length-1){this.current++;this.applyFrame(this.current);} }
+  stepB(){ if(this.current>0){this.current--;this.applyFrame(this.current);} }
+}
+const ANIMS={};
+
+function makeControls(id,el){
+  el.innerHTML=`<div class="anim-controls">
+    <button onclick="ANIMS['${id}'].stepB()">◀ 上一步</button>
+    <button id="${id}-pb" onclick="ANIMS['${id}'].playing?ANIMS['${id}'].pause():ANIMS['${id}'].play()">▶ 播放</button>
+    <button onclick="ANIMS['${id}'].stepF()">下一步 ▶</button>
+    <button onclick="ANIMS['${id}'].reset()">↺ 重置</button>
+    <span class="anim-counter" id="${id}-cnt">1/8</span>
+  </div><div class="anim-label" id="${id}-lbl">初始状态</div>`;
+}
+
+// ─── Animation A1: FlashAttention Tiling ───
+makeControls('fa', document.getElementById('fa-anim-controls'));
+ANIMS['fa'] = new AnimationStateMachine('svg-fa', [
+  { label: '初始：HBM 中的 Q/K/V 矩阵，SRAM 中仅有 Q_br 常驻',
+    hide:['fa-kt0','fa-vt0','fa-kt1','fa-vt1','fa-ks','fa-vs','fa-stat','fa-creg','fa-arr-k','fa-arr-v','fa-arr-store','fa-load-lbl','fa-store-lbl'], show:[] },
+  { label: 'Step 1: 从 HBM 加载 K₀、V₀ 第一列块到 SRAM（async_copy）',
+    show:['fa-kt0','fa-vt0','fa-arr-k','fa-arr-v','fa-load-lbl','fa-ks','fa-vs'], hide:[] },
+  { label: 'Step 2: SRAM 内计算 S₀ = Q_br · K₀ᵀ / √d',
+    show:['fa-stat','fa-stat-t','fa-stat-t2'], hide:[] },
+  { label: 'Step 3: 更新在线统计量 m₀（最大值）和 ℓ₀（指数和）',
+    show:['fa-creg','fa-creg-t','fa-creg-t2'], hide:[] },
+  { label: 'Step 4: 计算 O₀ 分量，写回 HBM O 矩阵',
+    show:['fa-ot','fa-arr-store','fa-store-lbl'], hide:[] },
+  { label: 'Step 5: 加载下一列块 K₁/V₁，m₁ = max(m₀, max_j s₁ⱼ)',
+    show:['fa-kt1','fa-vt1'], hide:['fa-kt0','fa-vt0'],
+    texts:[{id:'fa-stat-t',text:'m₁ > m₀：需修正旧 O'}] },
+  { label: 'Step 6: 修正因子 diag(exp(m_old - m_new)) 缩放旧 O₀',
+    attrs:[{id:'fa-ot',attr:'fill-opacity',val:'0.7'}],
+    texts:[{id:'fa-creg-t',text:'O_rescaled'}] },
+  { label: '完成！O = softmax(QKᵀ/√d)V，HBM 访问 O(Nd)，无 N×N 矩阵',
+    show:[], hide:[],
+    attrs:[{id:'fa-ot',attr:'height',val:'140'},{id:'fa-ot',attr:'y',val:'40'}] }
+]);
+
+// ─── Animation A3: MLA KV Compression ───
+makeControls('mla', document.getElementById('mla-anim-controls'));
+ANIMS['mla'] = new AnimationStateMachine('svg-mla', [
+  { label: '初始：标准 MHA 每层每 token 需存储约 2048 维 KV Cache',
+    hide:['mla-a1','mla-wdkv','mla-ckv','mla-ckv-t','mla-ckv-d','mla-a2','mla-wuk','mla-kexp','mla-kexp-t','mla-kexp-d','mla-kpe','mla-kpe-t','mla-kpe-d','mla-stored','mla-stored-t','mla-stored-d','mla-bl1','mla-bl2','mla-save'], show:[] },
+  { label: 'Step 1: W_DKV 投影，c^KV = W_DKV·x，仅 512 维（压缩 4×）',
+    show:['mla-a1','mla-wdkv','mla-ckv','mla-ckv-t','mla-ckv-d'], hide:[] },
+  { label: 'Step 2: 计算时动态解压 K = W_UK·c^KV，无需常驻存储完整 K',
+    show:['mla-a2','mla-wuk','mla-kexp','mla-kexp-t','mla-kexp-d'], hide:[] },
+  { label: 'Step 3: RoPE 位置编码分量 k_pe（64维）单独拼接，不可吸收',
+    show:['mla-kpe','mla-kpe-t','mla-kpe-d'], hide:[] },
+  { label: '实际存储 [c^KV; k_pe] = 576 维，节省约 72% KV Cache！',
+    show:['mla-stored','mla-stored-t','mla-stored-d','mla-bl1','mla-bl2','mla-save'],
+    attrs:[{id:'mla-bar1',attr:'width',val:'160'},{id:'mla-bar2',attr:'width',val:'45'}] }
+]);
+
+// ─── Animation A4: GEMM SRAM Double-Buffer ───
+makeControls('gemm', document.getElementById('gemm-anim-controls'));
+ANIMS['gemm'] = new AnimationStateMachine('svg-gemm', [
+  { label: '初始：A(M×K) 和 B(K×N) 在 HBM，SRAM 空闲，C 全零',
+    hide:['gem-a0','gem-a1','gem-b0','gem-b1','sram-a0-fill','sram-a1-fill','sram-b0-fill','sram-b1-fill','sram-tc-fill','gem-arr-a','gem-arr-b','gem-arr-store','gem-mma-lbl'], show:[] },
+  { label: 'Step 1: async_copy A_tile[K=0] → SRAM buffer[0]（不阻塞线程）',
+    show:['gem-a0','gem-arr-a','sram-a0-fill'], hide:[] },
+  { label: 'Step 2: async_copy B_tile[K=0] → SRAM（与 A 同步加载）',
+    show:['gem-b0','gem-arr-b','sram-b0-fill'], hide:[] },
+  { label: 'Step 3: mma.sync A_tile×B_tile → C_reg（Tensor Core 计算）',
+    show:['sram-tc-fill','gem-mma-lbl'], hide:[] },
+  { label: 'Step 4: 同时 async_copy A_tile[K=1]（双缓冲：计算与加载重叠）',
+    show:['gem-a1','sram-a1-fill'], hide:['gem-a0','sram-a0-fill'],
+    texts:[{id:'gem-mma-lbl',text:'mma.sync K=0 同时 load K=1'}] },
+  { label: 'Step 5: Epilogue：C_reg × scale_A × scale_B + bias → C(HBM)',
+    show:['gem-arr-store'], hide:['gem-mma-lbl'],
+    attrs:[{id:'sram-tc-fill',attr:'fill-opacity',val:'0.2'}] }
+]);
+
+// ─── Animation A5: MoE Routing ───
+makeControls('moe', document.getElementById('moe-anim-controls'));
+ANIMS['moe'] = new AnimationStateMachine('svg-moe', [
+  { label: '初始：4 个 token（蓝色），待路由到 8 个专家（Top-2）',
+    hide:['moe-lines','moe-router','moe-router-t','moe-router-t2','moe-router-t3','moe-k1','moe-k2','moe-k3','moe-k4','moe-perm','moe-perm-t','moe-perm-t2','moe-e0','moe-e0-t','moe-e0-t2','moe-e1','moe-e1-t','moe-e1-t2','moe-edots','moe-gate','moe-gate-t','moe-gate-t2','moe-unperm','moe-unperm-t','moe-unperm-t2','moe-unperm-t3'], show:[] },
+  { label: 'Step 1: x·W_router → logits [4 tokens × 8 experts]',
+    show:['moe-lines','moe-router','moe-router-t','moe-router-t2','moe-router-t3'], hide:[] },
+  { label: 'Step 2: TopK softmax：每个 token 选 Top-2 专家（绿/黄高亮）',
+    show:['moe-k1','moe-k2','moe-k3','moe-k4'], hide:[] },
+  { label: 'Step 3: Permute：token 副本按专家 id 排序，构建 expert_first_token_offset',
+    show:['moe-perm','moe-perm-t','moe-perm-t2'], hide:[] },
+  { label: 'Step 4: Group GEMM：各专家独立并行处理分配到的 token batch',
+    show:['moe-e0','moe-e0-t','moe-e0-t2','moe-e1','moe-e1-t','moe-e1-t2','moe-edots'], hide:[] },
+  { label: 'Step 5: 门控权重 gᵢ 加权各专家输出',
+    show:['moe-gate','moe-gate-t','moe-gate-t2'], hide:[] },
+  { label: 'Step 6: Unpermute：按原始 token 顺序重排，Σᵢ gᵢ·Eᵢ(x) 完成聚合',
+    show:['moe-unperm','moe-unperm-t','moe-unperm-t2','moe-unperm-t3'], hide:[] }
+]);
+
+// ─── Theme toggle ───
+function toggleTheme(){
+  const h=document.documentElement;
+  h.dataset.theme=h.dataset.theme==='light'?'dark':'light';
+  document.getElementById('theme-btn').textContent=h.dataset.theme==='light'?'🌙 深色':'☀ 浅色';
+  localStorage.setItem('vllm-theme',h.dataset.theme);
+}
+(function(){
+  const t=localStorage.getItem('vllm-theme')||'dark';
+  document.documentElement.dataset.theme=t;
+  const b=document.getElementById('theme-btn');
+  if(b) b.textContent=t==='light'?'🌙 深色':'☀ 浅色';
+})();
+
+// ─── Nav IntersectionObserver ───
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    const a=document.querySelector(`nav a[href="#${e.target.id}"]`);
+    if(a) a.classList.toggle('active',e.isIntersecting);
+  });
+},{rootMargin:'-15% 0% -65% 0%'});
+document.querySelectorAll('section[id]').forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>
